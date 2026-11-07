@@ -1,0 +1,131 @@
+name: Aggiorna carte meteo
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"   # ogni mezz'ora controlla se NOAA o ECMWF hanno pubblicato una corsa nuova
+  workflow_dispatch:
+    inputs:
+      forza:
+        description: "Rigenera tutte le carte anche se non ci sono corse nuove"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ["site/**", "meteo/**", "assets/**", "requirements.txt", ".github/workflows/**"]
+
+permissions:
+  contents: write   # solo per il commit che tiene attivo il controllo automatico
+  pages: write
+  id-token: write
+  actions: write    # per cancellare le copie vecchie della cache
+
+concurrency:
+  group: carte-meteo
+  cancel-in-progress: false
+
+jobs:
+  controlla:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      aggiorna: ${{ steps.check.outputs.update }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Indirizzo del sito pubblicato
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "url=$(gh api repos/${{ github.repository }}/pages --jq .html_url 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+
+      - name: Ci sono corse nuove?
+        id: check
+        run: |
+          URL="${{ steps.pages.outputs.url }}"
+          ARGS=""
+          if [ -n "$URL" ]; then ARGS="--manifest-url ${URL%/}/data/manifest.json"; fi
+          # una modifica al codice o un avvio a mano pubblicano comunque il sito
+          if [ "${{ github.event_name }}" != "schedule" ]; then ARGS="$ARGS --force"; fi
+          python3 -m meteo.check $ARGS
+
+      - name: Mantieni attivo il controllo automatico
+        # GitHub sospende i controlli programmati dopo 60 giorni senza commit
+        if: github.event_name == 'schedule'
+        run: |
+          ultimo=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - ultimo )) -gt $(( 40 * 86400 )) ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Mantiene attivo l'aggiornamento automatico delle carte"
+            git push
+          fi
+
+  genera:
+    needs: controlla
+    if: needs.controlla.outputs.aggiorna == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Recupera le carte già pubblicate
+        uses: actions/cache/restore@v6
+        with:
+          path: public
+          key: carte-${{ github.run_id }}
+          restore-keys: carte-
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installa le librerie
+        run: pip install -r requirements.txt
+
+      - name: Genera le carte delle corse nuove
+        id: build
+        run: python -m meteo.build --public public --workers "$(nproc)" ${{ inputs.forza && '--force' || '' }}
+
+      - name: Copia le pagine del sito
+        id: sito
+        run: |
+          cp -r site/. public/
+          if [ -f public/data/manifest.json ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; fi
+          du -sh public
+          find public -name '*.png' | wc -l
+
+      - name: Salva le carte per il prossimo giro
+        if: steps.build.outputs.updated == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: public
+          key: carte-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Prepara la pubblicazione
+        if: steps.sito.outputs.ok == 'true'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: public
+
+      - name: Pubblica su GitHub Pages
+        id: deploy
+        if: steps.sito.outputs.ok == 'true'
+        uses: actions/deploy-pages@v5
+
+      - name: Elimina le copie vecchie della cache
+        if: steps.build.outputs.updated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list --repo "${{ github.repository }}" --key carte- --sort created_at --order desc \
+            --limit 100 --json id --jq '.[1:][].id' | xargs -r -n1 gh cache delete --repo "${{ github.repository }}" || true
+
+      - name: Segnala le generazioni non riuscite
+        if: steps.build.outputs.errors != ''
+        run: |
+          echo "::error::Carte non generate per: ${{ steps.build.outputs.errors }} (le altre sono state pubblicate)"
+          exit 1
