@@ -187,7 +187,8 @@ def finalize(model, run, public, stage, results, manifest, regions, charts):
     used = [c for c in charts if any(c in e["charts"] for e in steps)]
     manifest["models"][model.id] = dict(
         label=model.long_label, short=model.label, credit=model.credit, run=run.iso,
-        updated=iso(dt.datetime.now(UTC)), steps=steps, charts=used, regions=regions, ext=C.IMG_EXT)
+        updated=iso(dt.datetime.now(UTC)), steps=steps, charts=used, regions=regions, ext=C.IMG_EXT,
+        schema=C.SCHEMA)
     if kept:
         log(f"  tenute {kept} scadenze lunghe della corsa precedente")
 
@@ -225,8 +226,9 @@ def main(argv=None):
             if run is None:
                 log(f"{model.label}: nessuna corsa completa trovata")
                 continue
-            cur = manifest[group].get(mid, {}).get("run")
-            if cur == run.iso and os.path.isdir(os.path.join(a.public, "maps", mid)) and not a.force:
+            entry = manifest[group].get(mid, {})
+            same = entry.get("run") == run.iso and entry.get("schema", 1) >= C.SCHEMA
+            if same and os.path.isdir(os.path.join(a.public, "maps", mid)) and not a.force:
                 log(f"{model.label}: la corsa {run.time:%d/%m %H}Z è già pubblicata")
                 continue
             log(f"{model.label}: genero la corsa {run.time:%d/%m/%Y %H}Z da {run.root}")
