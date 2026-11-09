@@ -408,7 +408,7 @@ def save_png(fig, path):
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=C.DPI, facecolor="white")
     buf.seek(0)
-    im = Image.open(buf).convert("RGB").quantize(colors=256, method=Image.Quantize.FASTOCTREE,
+    im = Image.open(buf).convert("RGB").quantize(colors=96, method=Image.Quantize.FASTOCTREE,
                                                  dither=Image.Dither.NONE)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     im.save(path, optimize=True)

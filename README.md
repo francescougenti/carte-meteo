@@ -63,7 +63,7 @@ Per provare senza internet, `tests/fake_data.py` crea dati GRIB2 sintetici con l
 
 ## Limiti
 
-- GitHub Pages ammette siti fino a 1 GB. Con tutti i modelli il sito occupa circa 750–850 MB: per questo AIFS e ICON-EU hanno solo due aree. Il registro di ogni aggiornamento riporta lo spazio occupato e avvisa sopra i 950 MB.
+- GitHub Pages ammette siti fino a 1 GB. Con tutti i modelli il sito occupa circa 750–850 MB (immagini a 96 colori): per questo AIFS e ICON-EU hanno solo due aree. Il registro di ogni aggiornamento riporta lo spazio occupato e avvisa sopra i 950 MB.
 - ARPEGE (Météo-France) non è incluso: l'archivio aperto di Météo-France al momento delle prove non conteneva i file delle corse.
 - GitHub può ritardare di qualche minuto i controlli programmati nelle ore di punta.
 - I controlli programmati si sospendono dopo 60 giorni senza commit. Il workflow lo evita facendo un commit vuoto ogni 40 giorni.
