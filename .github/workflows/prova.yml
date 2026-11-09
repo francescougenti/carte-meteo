@@ -1,0 +1,46 @@
+name: Prova nuovi modelli (solo sviluppo)
+
+on:
+  push:
+    branches: [prova]
+
+permissions:
+  contents: write
+
+jobs:
+  prova:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Genera con dati reali (poche scadenze)
+        run: python -m meteo.build --public public --models gfs,ecmwf,aifs,icon-eu --steps 0,24,72 --regions italia,europa --workers "$(nproc)"
+      - name: Valori sulle località
+        run: |
+          python3 - <<'PY'
+          import json, glob
+          for f in sorted(glob.glob("public/data/punti/*.json")):
+              d = json.load(open(f))
+              for c in ("ostuni", "milano", "torino"):
+                  x = d["cities"][c]
+                  print(f.split("/")[-1], c, d["h"], "zero:", x.get("fzl"), "neve:", x.get("snow"), "t850:", x.get("t850"))
+          PY
+          du -sh public/maps/*
+      - name: Anteprima delle carte su un ramo
+        run: |
+          mkdir anteprima
+          for f in gfs/europa/zero/024 ecmwf/europa/zero/024 aifs/italia/zero/024 icon-eu/italia/zero/024 \
+                   gfs/europa/neve/072 ecmwf/europa/neve/072 icon-eu/italia/neve/072 ecmwf/italia/neve/072; do
+            cp "public/maps/$f.webp" "anteprima/$(echo $f | tr / _).webp" || true
+          done
+          cd anteprima
+          git init -q -b anteprima
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "Anteprima carte"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" anteprima
