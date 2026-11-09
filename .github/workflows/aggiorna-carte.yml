@@ -74,7 +74,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 150
     environment:
-      name: github-pages
+      # ambiente dedicato: "github-pages" era stato creato con una regola che bloccava il ramo main
+      name: sito-carte-meteo
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
