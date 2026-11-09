@@ -39,7 +39,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "repos/${{ github.repository }}/pages" > pages.json 2> pages.err || true
-          cat pages.json pages.err
+          cat pages.err
           url=$(python3 -c "import json; print(json.load(open('pages.json')).get('html_url',''))" 2>/dev/null || true)
           case "$url" in https://*) ;; *) url="" ;; esac
           echo "url=$url" >> "$GITHUB_OUTPUT"
