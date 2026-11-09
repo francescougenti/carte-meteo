@@ -29,6 +29,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       aggiorna: ${{ steps.check.outputs.update }}
+      sito: ${{ steps.pages.outputs.url }}
     steps:
       - uses: actions/checkout@v7
 
@@ -36,12 +37,19 @@ jobs:
         id: pages
         env:
           GH_TOKEN: ${{ github.token }}
-        run: echo "url=$(gh api repos/${{ github.repository }}/pages --jq .html_url 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+        run: |
+          url=$(gh api "repos/${{ github.repository }}/pages" --jq .html_url 2>/dev/null || true)
+          case "$url" in https://*) ;; *) url="" ;; esac
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          if [ -z "$url" ]; then
+            echo "::warning::GitHub Pages non è ancora attivo: in Settings → Pages scegli Source = GitHub Actions"
+          fi
 
       - name: Ci sono corse nuove?
         id: check
+        env:
+          URL: ${{ steps.pages.outputs.url }}
         run: |
-          URL="${{ steps.pages.outputs.url }}"
           ARGS=""
           if [ -n "$URL" ]; then ARGS="--manifest-url ${URL%/}/data/manifest.json"; fi
           # una modifica al codice o un avvio a mano pubblicano comunque il sito
@@ -106,14 +114,14 @@ jobs:
           key: carte-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Prepara la pubblicazione
-        if: steps.sito.outputs.ok == 'true'
+        if: steps.sito.outputs.ok == 'true' && needs.controlla.outputs.sito != ''
         uses: actions/upload-pages-artifact@v5
         with:
           path: public
 
       - name: Pubblica su GitHub Pages
         id: deploy
-        if: steps.sito.outputs.ok == 'true'
+        if: steps.sito.outputs.ok == 'true' && needs.controlla.outputs.sito != ''
         uses: actions/deploy-pages@v5
 
       - name: Elimina le copie vecchie della cache
@@ -123,6 +131,12 @@ jobs:
         run: |
           gh cache list --repo "${{ github.repository }}" --key carte- --sort created_at --order desc \
             --limit 100 --json id --jq '.[1:][].id' | xargs -r -n1 gh cache delete --repo "${{ github.repository }}" || true
+
+      - name: Segnala che GitHub Pages non è attivo
+        if: needs.controlla.outputs.sito == ''
+        run: |
+          echo "::error::Carte generate ma non pubblicate: attiva GitHub Pages (Settings → Pages → Source = GitHub Actions) e rilancia il workflow"
+          exit 1
 
       - name: Segnala le generazioni non riuscite
         if: steps.build.outputs.errors != ''
