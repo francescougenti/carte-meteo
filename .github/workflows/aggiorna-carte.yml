@@ -2,7 +2,7 @@ name: Aggiorna carte meteo
 
 on:
   schedule:
-    - cron: "7,37 * * * *"   # ogni mezz'ora controlla se NOAA o ECMWF hanno pubblicato una corsa nuova
+    - cron: "8,38 * * * *"   # ogni mezz'ora controlla se NOAA o ECMWF hanno pubblicato una corsa nuova
   workflow_dispatch:
     inputs:
       forza:
