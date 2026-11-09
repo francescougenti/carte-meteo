@@ -121,7 +121,9 @@ def write_gfs(run, steps):
                 ("UGRD", "10 m above ground", when, a["u10"]), ("VGRD", "10 m above ground", when, a["v10"]),
                 ("GUST", "surface", when, a["gust"]), ("CAPE", "surface", when, a["cape"]),
                 ("CAPE", "180-0 mb above ground", when, a["cape"] * 0.5),
-                ("PWAT", "entire atmosphere (considered as a single layer)", when, a["pwat"])]
+                ("PWAT", "entire atmosphere (considered as a single layer)", when, a["pwat"]),
+                ("SNOD", "surface", when, np.clip((2 - (a["t2m"] - 273.15)) * 0.05, 0, None)),
+                ("HGT", "0C isotherm", when, np.clip((a["t850"] - 273.15) * 150 + 1500, 0, None))]
         if fh > 0:
             recs += [("TCDC", "entire atmosphere", f"{max(fh - 6, 0)}-{fh} hour ave fcst", a["tcc"] * 0.8),
                      ("TCDC", "entire atmosphere", when, a["tcc"]),
@@ -156,14 +158,17 @@ def write_ecmwf(run, steps, top="ecmwf", path="ifs", aifs=False):
             recs += [("tcwv", "sfc", None, a["pwat"]), ("mucape", "sfc", None, a["cape"])]
         if st and not aifs:
             recs.append(("10fg", "sfc", None, a["gust"] * 1.05))
-        for lev in ("1000", "850", "700", "500", "250"):
-            recs += [("gh", "pl", lev, {"1000": a["z1000"], "850": a["z1000"] + 140, "700": a["z500"] - 2600,
-                                        "500": a["z500"], "250": a["z250"]}[lev]),
-                     ("t", "pl", lev, a["t850"] if lev == "850" else a["t500"]),
-                     (("q", "pl", lev, qfrom(a["rh850"] if lev == "850" else a["rh700"],
-                                             (a["t850"] if lev == "850" else a["t500"]) - 273.15, float(lev)))
-                      if aifs else ("r", "pl", lev, a["rh850"] if lev == "850" else a["rh700"])),
+        zl = {"1000": a["z1000"], "925": a["z1000"] + 680, "850": a["z1000"] + 1350, "700": a["z500"] - 2600,
+              "600": a["z500"] - 1300, "500": a["z500"], "250": a["z250"]}
+        for lev in ("1000", "925", "850", "700", "600", "500", "250"):
+            tl = a["t500"] if lev in ("500", "250") else a["t850"] + 0.0065 * (zl["850"] - zl[lev])
+            rl = a["rh850"] if lev == "850" else a["rh700"]
+            recs += [("gh", "pl", lev, zl[lev]), ("t", "pl", lev, tl),
+                     (("q", "pl", lev, qfrom(rl, tl - 273.15, float(lev))) if aifs else ("r", "pl", lev, rl)),
                      ("u", "pl", lev, a["u250"]), ("v", "pl", lev, a["v250"])]
+        if not aifs:
+            recs += [("sd", "sfc", None, np.clip((2 - (a["t2m"] - 273.15)) * 0.012, 0, None)),
+                     ("rsn", "sfc", None, a["t2m"] * 0 + 240.0)]
         name = f"{d}{hh}0000-{st}h-oper-fc"
         lines, off = [], 0
         with open(os.path.join(folder, name + ".grib2"), "wb") as f:
@@ -200,7 +205,8 @@ def write_icon(run, steps):
             if st else a["mslp"] * 0
         single = {"pmsl": a["mslp"], "t_2m": a["t2m"], "u_10m": a["u10"], "v_10m": a["v10"],
                   "vmax_10m": a["gust"], "cape_ml": a["cape"], "clct": a["tcc"], "tqv": a["pwat"],
-                  "tot_prec": cum}
+                  "tot_prec": cum, "h_snow": np.clip((2 - (a["t2m"] - 273.15)) * 0.05, 0, None),
+                  "hzerocl": np.clip((a["t850"] - 273.15) * 150 + 1500, 0, None)}
         press = {("fi", "500"): a["z500"] * 9.80665, ("fi", "1000"): a["z1000"] * 9.80665,
                  ("fi", "250"): a["z250"] * 9.80665, ("t", "850"): a["t850"], ("t", "500"): a["t500"],
                  ("relhum", "850"): a["rh850"], ("relhum", "700"): a["rh700"],

@@ -49,7 +49,8 @@ def save_manifest(public, m):
     m["generated"] = iso(dt.datetime.now(UTC))
     m["regions"] = [dict(id=r["id"], label=r["label"]) for r in C.REGIONS]
     m["groups"] = C.GROUPS
-    m["charts"] = [dict(id=c["id"], label=c["label"], group=c["group"], title=c["title"]) for c in C.CHARTS]
+    m["charts"] = [dict(id=c["id"], label=c["label"], group=c["group"], title=c["title"], regions=c.get("regions"))
+                   for c in C.CHARTS]
     m["ens_products"] = [dict(id=p["id"], label=p["label"], title=p["title"]) for p in C.ENS_PRODUCTS]
     m["cities"] = [dict(id=c["id"], name=c["name"]) for c in C.CITIES]
     m["order"] = [k for k in MODELS]
@@ -167,12 +168,13 @@ def finalize(model, run, public, stage, results, manifest, regions, charts):
     if old and os.path.isdir(final):
         for e in old.get("steps", []):
             r0, v0 = parse_iso(e["run"]), parse_iso(e["valid"])
-            if v0 > last_valid and run.time - dt.timedelta(hours=12) <= r0 < run.time:
+            if v0 > last_valid and run.time - dt.timedelta(hours=12) <= r0 < run.time \
+                    and old.get("ext", "png") == C.IMG_EXT:
                 for rid in regions:
                     for cid in e["charts"]:
-                        src = os.path.join(final, rid, cid, f"{e['h']:03d}.png")
+                        src = os.path.join(final, rid, cid, f"{e['h']:03d}.{old.get('ext', 'png')}")
                         if os.path.exists(src):
-                            dst = os.path.join(stage, rid, cid, f"{e['h']:03d}.png")
+                            dst = os.path.join(stage, rid, cid, os.path.basename(src))
                             os.makedirs(os.path.dirname(dst), exist_ok=True)
                             shutil.move(src, dst)
                 steps.append(e)
@@ -185,7 +187,7 @@ def finalize(model, run, public, stage, results, manifest, regions, charts):
     used = [c for c in charts if any(c in e["charts"] for e in steps)]
     manifest["models"][model.id] = dict(
         label=model.long_label, short=model.label, credit=model.credit, run=run.iso,
-        updated=iso(dt.datetime.now(UTC)), steps=steps, charts=used, regions=regions)
+        updated=iso(dt.datetime.now(UTC)), steps=steps, charts=used, regions=regions, ext=C.IMG_EXT)
     if kept:
         log(f"  tenute {kept} scadenze lunghe della corsa precedente")
 

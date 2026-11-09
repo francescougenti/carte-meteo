@@ -140,6 +140,8 @@ class GFS:
         "cape": ("CAPE", "surface"),
         "tcc": ("TCDC", "entire atmosphere*"),  # "*": il livello inizia così (la dicitura è cambiata nelle versioni)
         "pwat": ("PWAT", "entire atmosphere*"),
+        "snow": ("SNOD", "surface"),
+        "fzl": ("HGT", "0C isotherm"),
     }
 
     def steps(self, run):
@@ -204,7 +206,9 @@ class GFS:
             return a / 10.0
         if key in ("t850", "t500", "t2m"):
             return a - 273.15
-        return a  # RH %, vento m/s, precipitazione kg/m² = mm, CAPE J/kg, nubi %, PWAT mm
+        if key == "snow":
+            return a * 100.0  # m -> cm
+        return a  # RH %, vento m/s, pioggia kg/m² = mm, CAPE J/kg, nubi %, PWAT mm, zero termico m
 
     def derive(self, arrays):
         return arrays
@@ -249,6 +253,14 @@ class ECMWF:
         "tcc": (["tcc"], "sfc", None),
         "pwat": (["tcwv"], "sfc", None),
         "tp_total": (["tp"], "sfc", None),
+        # neve: equivalente in acqua (m) e densità (kg/m³) -> altezza in cm
+        "sd": (["sd"], "sfc", None),
+        "rsn": (["rsn"], "sfc", None),
+        # livelli per calcolare la quota dello zero termico
+        "t1000": (["t"], "pl", "1000"), "t925": (["t"], "pl", "925"), "t700": (["t"], "pl", "700"),
+        "t600": (["t"], "pl", "600"),
+        "z925": (["gh"], "pl", "925"), "z850": (["gh"], "pl", "850"), "z700": (["gh"], "pl", "700"),
+        "z600": (["gh"], "pl", "600"),
     }
 
     def last_step(self, t):
@@ -295,7 +307,7 @@ class ECMWF:
             return a / 100.0
         if key.startswith("z"):
             return a / 10.0
-        if key in ("t850", "t500", "t700", "t2m"):
+        if key == "t2m" or (key.startswith("t") and key[1:].isdigit()):
             return a - 273.15
         if key == "tp_total":
             return a * 1000.0  # m -> mm
@@ -304,7 +316,48 @@ class ECMWF:
         return a
 
     def derive(self, arrays):
-        return arrays
+        return derive_snow_fzl(arrays)
+
+
+LEVELS_FZL = (1000, 925, 850, 700, 600, 500)
+
+
+def freezing_level(arrays):
+    """Quota dello zero termico (m) dalle temperature e dalle quote dei livelli di pressione.
+
+    Si sale dal livello più basso e si interpola dove la temperatura passa da sopra a sotto 0 °C.
+    Se fa già sotto zero a 1000 hPa la quota è 0 (zero termico al livello del mare).
+    """
+    ts = [arrays.get(f"t{p}") for p in LEVELS_FZL]
+    zs = [arrays.get(f"z{p}") for p in LEVELS_FZL]
+    if any(x is None for x in ts + zs):
+        return None
+    T = np.stack(ts)
+    Z = np.stack(zs) * 10.0  # dam -> m
+    out = np.full(T.shape[1:], np.nan, np.float32)
+    done = T[0] <= 0
+    out[done] = 0.0
+    for k in range(len(LEVELS_FZL) - 1):
+        t0, t1 = T[k], T[k + 1]
+        cross = (~done) & (t0 > 0) & (t1 <= 0)
+        frac = t0 / np.where(cross, t0 - t1, 1.0)
+        out = np.where(cross, Z[k] + frac * (Z[k + 1] - Z[k]), out)
+        done |= cross
+    out = np.where(done, out, Z[-1])  # ancora sopra zero a 500 hPa: oltre i 5500 m circa
+    return np.maximum(out, 0.0).astype(np.float32)
+
+
+def derive_snow_fzl(arrays):
+    sd, rsn = arrays.pop("sd", None), arrays.pop("rsn", None)
+    if sd is not None and rsn is not None and "snow" not in arrays:
+        arrays["snow"] = (sd * 1000.0 / np.maximum(rsn, 50.0) * 100.0).astype(np.float32)
+    if "fzl" not in arrays:
+        f = freezing_level(arrays)
+        if f is not None:
+            arrays["fzl"] = f
+    for k in ("t1000", "t925", "t700", "t600", "z925", "z850", "z700", "z600"):
+        arrays.pop(k, None)
+    return arrays
 
 
 def rh_from_q(q, t_c, p):
@@ -335,7 +388,6 @@ class AIFS(ECMWF):
         "rh700": (["r"], "pl", "700"),
         "q850": (["q"], "pl", "850"),
         "q700": (["q"], "pl", "700"),
-        "t700": (["t"], "pl", "700"),
         "pwat": (["tcwv", "tcw"], "sfc", None),
     })
 
@@ -352,9 +404,9 @@ class AIFS(ECMWF):
             q, t = arrays.get(f"q{lev}"), arrays.get(f"t{lev}")
             if f"rh{lev}" not in arrays and q is not None and t is not None:
                 arrays[f"rh{lev}"] = rh_from_q(q, t, float(lev)).astype(np.float32)
-        for k in ("q850", "q700", "t700"):
+        for k in ("q850", "q700"):
             arrays.pop(k, None)
-        return arrays
+        return derive_snow_fzl(arrays)
 
 
 class ICONEU:
@@ -375,7 +427,7 @@ class ICONEU:
         "rh850": ("relhum", "850"), "rh700": ("relhum", "700"),
         "u10": ("u_10m", None), "v10": ("v_10m", None), "u250": ("u", "250"), "v250": ("v", "250"),
         "gust": ("vmax_10m", None), "cape": ("cape_ml", None), "tcc": ("clct", None), "pwat": ("tqv", None),
-        "tp_total": ("tot_prec", None),
+        "tp_total": ("tot_prec", None), "snow": ("h_snow", None), "fzl": ("hzerocl", None),
     }
 
     def steps(self, run):
@@ -404,6 +456,10 @@ class ICONEU:
             return a / 9.80665 / 10.0  # geopotenziale (m²/s²) -> dam
         if key in ("t850", "t500", "t2m"):
             return a - 273.15
+        if key == "snow":
+            return a * 100.0
+        if key == "fzl":
+            return np.where(a < 0, 0.0, a)  # valore mancante quando fa sotto zero già al suolo
         return a
 
     def derive(self, arrays):
