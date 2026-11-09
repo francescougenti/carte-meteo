@@ -18,7 +18,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 import numpy as np
 
 from . import config as C
-from . import grib
+from . import ensemble, grib, points
 from .sources import MODELS, UTC, download, log
 
 
@@ -39,9 +39,10 @@ def load_manifest(public):
         with open(manifest_path(public)) as f:
             m = json.load(f)
         m.setdefault("models", {})
+        m.setdefault("ensembles", {})
         return m
     except Exception:
-        return {"models": {}}
+        return {"models": {}, "ensembles": {}}
 
 
 def save_manifest(public, m):
@@ -49,6 +50,9 @@ def save_manifest(public, m):
     m["regions"] = [dict(id=r["id"], label=r["label"]) for r in C.REGIONS]
     m["groups"] = C.GROUPS
     m["charts"] = [dict(id=c["id"], label=c["label"], group=c["group"], title=c["title"]) for c in C.CHARTS]
+    m["ens_products"] = [dict(id=p["id"], label=p["label"], title=p["title"]) for p in C.ENS_PRODUCTS]
+    m["cities"] = [dict(id=c["id"], name=c["name"]) for c in C.CITIES]
+    m["order"] = [k for k in MODELS]
     p = manifest_path(public)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p + ".tmp", "w") as f:
@@ -72,6 +76,7 @@ def prepare_step(model, run, h, prev_cum):
             log(f"    ! {key} +{h}h: griglia diversa, scartato")
             continue
         arrays[key] = model.convert(key, v).astype(np.float32)
+    arrays = model.derive(arrays)
     tot, b6 = arrays.pop("tp_total", None), arrays.pop("tp_bucket6", None)
     if h == 0:
         cum = tot if tot is not None else (np.zeros_like(arrays["mslp"]) if "mslp" in arrays else None)
@@ -103,6 +108,7 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
     info = dict(id=model.id, short=model.chart_label, credit=model.credit)
     results, prev_cum = {}, None
     t0 = time.time()
+    rows, sampler = [], None
 
     def collect(done):
         for f in done:
@@ -128,6 +134,9 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
             if "mslp" not in arrays or lats is None:
                 log(f"    ! +{h}h incompleta, saltata")
                 continue
+            if sampler is None:
+                sampler = points.sampler(lats, lons)
+            rows.append((h, iso(run.time + dt.timedelta(hours=h)), points.det_values(arrays, sampler)))
             path = os.path.join(wdir, f"{h:03d}.npz")
             np.savez(path, _lats=lats, _lons=lons, **arrays)
             job = dict(npz=path, model=info, run=run.iso, h=h, out=stage, regions=regions, charts=charts)
@@ -139,6 +148,8 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
             done, pending = wait(pending, return_when=FIRST_COMPLETED)
             collect(done)
     shutil.rmtree(wdir, ignore_errors=True)
+    if rows:
+        points.write_det(public, model, run.iso, rows)
     return results, stage
 
 
@@ -174,7 +185,7 @@ def finalize(model, run, public, stage, results, manifest, regions, charts):
     used = [c for c in charts if any(c in e["charts"] for e in steps)]
     manifest["models"][model.id] = dict(
         label=model.long_label, short=model.label, credit=model.credit, run=run.iso,
-        updated=iso(dt.datetime.now(UTC)), steps=steps, charts=used)
+        updated=iso(dt.datetime.now(UTC)), steps=steps, charts=used, regions=regions)
     if kept:
         log(f"  tenute {kept} scadenze lunghe della corsa precedente")
 
@@ -191,7 +202,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--public", default="public", help="cartella del sito pubblicato")
     ap.add_argument("--work", default="work", help="cartella temporanea")
-    ap.add_argument("--models", default="gfs,ecmwf")
+    ap.add_argument("--models", default="", help="modelli separati da virgola (predefinito: tutti)")
     ap.add_argument("--force", action="store_true", help="rigenera anche se la corsa è già pubblicata")
     ap.add_argument("--workers", type=int, default=os.cpu_count() or 2)
     ap.add_argument("--steps", help="solo queste scadenze (prove), es. 0,6,12")
@@ -199,29 +210,36 @@ def main(argv=None):
     ap.add_argument("--charts", help="solo queste carte (prove)")
     a = ap.parse_args(argv)
 
-    regions = a.regions.split(",") if a.regions else [r["id"] for r in C.REGIONS]
+    all_regions = a.regions.split(",") if a.regions else [r["id"] for r in C.REGIONS]
     charts = a.charts.split(",") if a.charts else [c["id"] for c in C.CHARTS]
     only = [int(s) for s in a.steps.split(",")] if a.steps else None
     manifest = load_manifest(a.public)
     updated, errors = [], []
-    for mid in a.models.split(","):
+    for mid in (a.models.split(",") if a.models else list(MODELS)):
         model = MODELS[mid]
+        group = "ensembles" if model.kind == "ens" else "models"
         try:
             run = model.latest()
             if run is None:
                 log(f"{model.label}: nessuna corsa completa trovata")
                 continue
-            cur = manifest["models"].get(mid, {}).get("run")
+            cur = manifest[group].get(mid, {}).get("run")
             if cur == run.iso and os.path.isdir(os.path.join(a.public, "maps", mid)) and not a.force:
                 log(f"{model.label}: la corsa {run.time:%d/%m %H}Z è già pubblicata")
                 continue
             log(f"{model.label}: genero la corsa {run.time:%d/%m/%Y %H}Z da {run.root}")
             t0 = time.time()
-            results, stage = generate(model, run, a.public, a.work, a.workers, regions, charts, only)
-            finalize(model, run, a.public, stage, results, manifest, regions, charts)
+            if model.kind == "ens":
+                results, stage = ensemble.generate(model, run, a.public, a.work, a.workers, only)
+                ensemble.finalize(model, run, a.public, stage, results, manifest)
+                n = sum(len(v) for v in results.values()) * len(C.ENS_REGIONS)
+            else:
+                regions = [r for r in all_regions if not model.regions or r in model.regions]
+                results, stage = generate(model, run, a.public, a.work, a.workers, regions, charts, only)
+                finalize(model, run, a.public, stage, results, manifest, regions, charts)
+                n = sum(len(v) for v in results.values()) * len(regions)
             save_manifest(a.public, manifest)
             updated.append(mid)
-            n = sum(len(v) for v in results.values()) * len(regions)
             log(f"{model.label}: {n} carte in {time.time() - t0:.0f} s")
         except Exception as e:
             errors.append(mid)
@@ -229,6 +247,10 @@ def main(argv=None):
             traceback.print_exc()
     if updated:
         save_manifest(a.public, manifest)
+    size = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(a.public) for f in fs) / 1e6
+    log(f"Spazio occupato dal sito: {size:.0f} MB")
+    if size > 950:
+        log("::warning::Il sito supera 950 MB: GitHub Pages accetta al massimo 1 GB")
     gh_output(updated="true" if updated else "false", models=",".join(updated), errors=",".join(errors))
     return 0
 

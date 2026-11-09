@@ -75,7 +75,7 @@ jobs:
     # finché Pages è spento, i controlli programmati non rigenerano nulla (niente email di errore ogni mezz'ora)
     if: needs.controlla.outputs.aggiorna == 'true' && (needs.controlla.outputs.sito != '' || github.event_name != 'schedule')
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 240
     environment:
       # ambiente dedicato: "github-pages" era stato creato con una regola che bloccava il ramo main
       name: sito-carte-meteo

@@ -26,8 +26,9 @@ def blob(lon, lat, lon0, lat0, s):
     return np.exp(-(d ** 2 * np.cos(np.radians(lat0)) ** 2 + (lat - lat0) ** 2) / (2 * s ** 2))
 
 
-def atmosphere(lon1d, valid_h, seed):
-    lon, lat = np.meshgrid(lon1d, LAT)
+def atmosphere(lon1d, valid_h, seed, lat1d=LAT):
+    lon, lat = np.meshgrid(lon1d, lat1d)
+    res = abs(float(lat1d[1] - lat1d[0]))
     t = valid_h / 24.0
     rng = np.random.default_rng(seed)
     clat = np.clip(lat, -80, 80)
@@ -48,7 +49,7 @@ def atmosphere(lon1d, valid_h, seed):
     rh = np.clip(55 + 35 * np.sin(np.radians(4 * lon + 2 * lat - 30 * t)) + 30 * blob(lon, lat, cut_lon + 4, cut_lat - 2, 6)
                  + 4 * rng.standard_normal(lon.shape), 3, 100)
     f = 2 * 7.292e-5 * np.sin(np.radians(np.where(np.abs(clat) < 8, 8 * np.sign(clat + 1e-9), clat)))
-    dy = 111e3 * 0.25
+    dy = 111e3 * res
     dx = dy * np.cos(np.radians(clat))
 
     def geo(phi):  # vento geostrofico da un campo di geopotenziale (m)
@@ -79,14 +80,17 @@ def atmosphere(lon1d, valid_h, seed):
 SAMPLE = eccodes.codes_grib_new_from_samples("regular_ll_sfc_grib2")
 
 
-def encode(values, lon_first):
+def encode(values, lon_first, lat1d=LAT, lon1d=None):
     h = eccodes.codes_clone(SAMPLE)
-    for k, v in (("Ni", 1440), ("Nj", 721), ("latitudeOfFirstGridPointInDegrees", 90.0),
+    nj, ni = values.shape
+    res = abs(float(lat1d[1] - lat1d[0]))
+    lon_last = lon_first + (ni - 1) * res
+    for k, v in (("Ni", ni), ("Nj", nj), ("latitudeOfFirstGridPointInDegrees", float(lat1d[0])),
                  ("longitudeOfFirstGridPointInDegrees", lon_first % 360),
-                 ("latitudeOfLastGridPointInDegrees", -90.0),
-                 ("longitudeOfLastGridPointInDegrees", (lon_first + 359.75) % 360),
-                 ("iDirectionIncrementInDegrees", 0.25), ("jDirectionIncrementInDegrees", 0.25),
-                 ("jScansPositively", 0), ("bitsPerValue", 16)):
+                 ("latitudeOfLastGridPointInDegrees", float(lat1d[-1])),
+                 ("longitudeOfLastGridPointInDegrees", lon_last % 360),
+                 ("iDirectionIncrementInDegrees", res), ("jDirectionIncrementInDegrees", res),
+                 ("jScansPositively", 1 if lat1d[0] < lat1d[-1] else 0), ("bitsPerValue", 16)):
         eccodes.codes_set(h, k, v)
     eccodes.codes_set_values(h, values.astype(np.float64).ravel())
     msg = eccodes.codes_get_message(h)
@@ -136,23 +140,29 @@ def write_gfs(run, steps):
     print("GFS", run, sorted(steps))
 
 
-def write_ecmwf(run, steps):
+def write_ecmwf(run, steps, top="ecmwf", path="ifs", aifs=False):
     d, hh = run.strftime("%Y%m%d"), run.strftime("%H")
-    folder = os.path.join(OUT, "ecmwf", d, f"{hh}z", "ifs", "0p25", "oper")
+    folder = os.path.join(OUT, top, d, f"{hh}z", path, "0p25", "oper")
     os.makedirs(folder, exist_ok=True)
     for st in sorted(steps):
         a = atmosphere(LON_EC, run.hour + st, 1000 + st)
         cum = sum(atmosphere(LON_EC, run.hour + k + 6, 1000 + k)["rate6"] for k in range(0, st, 6)) if st else a["mslp"] * 0
         recs = [("msl", "sfc", None, a["mslp"]), ("2t", "sfc", None, a["t2m"]), ("10u", "sfc", None, a["u10"]),
-                ("10v", "sfc", None, a["v10"]), ("tcwv", "sfc", None, a["pwat"]), ("tcc", "sfc", None, a["tcc"]),
-                ("tp", "sfc", None, cum / 1000.0), ("mucape", "sfc", None, a["cape"])]
-        if st:
+                ("10v", "sfc", None, a["v10"]), ("tcc", "sfc", None, a["tcc"] / (100.0 if aifs else 1.0)),
+                ("tp", "sfc", None, cum / 1000.0)]
+        if aifs:
+            recs.append(("tcw", "sfc", None, a["pwat"]))
+        else:
+            recs += [("tcwv", "sfc", None, a["pwat"]), ("mucape", "sfc", None, a["cape"])]
+        if st and not aifs:
             recs.append(("10fg", "sfc", None, a["gust"] * 1.05))
         for lev in ("1000", "850", "700", "500", "250"):
             recs += [("gh", "pl", lev, {"1000": a["z1000"], "850": a["z1000"] + 140, "700": a["z500"] - 2600,
                                         "500": a["z500"], "250": a["z250"]}[lev]),
                      ("t", "pl", lev, a["t850"] if lev == "850" else a["t500"]),
-                     ("r", "pl", lev, a["rh850"] if lev == "850" else a["rh700"]),
+                     (("q", "pl", lev, qfrom(a["rh850"] if lev == "850" else a["rh700"],
+                                             (a["t850"] if lev == "850" else a["t500"]) - 273.15, float(lev)))
+                      if aifs else ("r", "pl", lev, a["rh850"] if lev == "850" else a["rh700"])),
                      ("u", "pl", lev, a["u250"]), ("v", "pl", lev, a["v250"])]
         name = f"{d}{hh}0000-{st}h-oper-fc"
         lines, off = [], 0
@@ -169,10 +179,113 @@ def write_ecmwf(run, steps):
                 off += len(msg)
         with open(os.path.join(folder, name + ".index"), "w") as f:
             f.write("\n".join(lines) + "\n")
-    print("ECMWF", run, sorted(steps))
+    print(top, run, sorted(steps))
+
+
+def qfrom(rh, t_c, p):
+    es = 6.112 * np.exp(17.67 * t_c / (t_c + 243.5))
+    e = rh / 100.0 * es
+    return 0.622 * e / (p - 0.378 * e)
+
+
+def write_icon(run, steps):
+    """ICON-EU: un file .bz2 per campo, griglia regionale 0.0625°."""
+    import bz2
+    lat = np.round(np.arange(29.5, 70.5 + 1e-6, 0.0625), 4)
+    lon = np.round(np.arange(-23.5, 62.5 + 1e-6, 0.0625), 4)
+    stamp, hh = run.strftime("%Y%m%d%H"), run.strftime("%H")
+    for st in sorted(steps):
+        a = atmosphere(lon, run.hour + st, 2000 + st, lat1d=lat)
+        cum = sum(atmosphere(lon, run.hour + k + 6, 2000 + k, lat1d=lat)["rate6"] for k in range(0, st, 6)) \
+            if st else a["mslp"] * 0
+        single = {"pmsl": a["mslp"], "t_2m": a["t2m"], "u_10m": a["u10"], "v_10m": a["v10"],
+                  "vmax_10m": a["gust"], "cape_ml": a["cape"], "clct": a["tcc"], "tqv": a["pwat"],
+                  "tot_prec": cum}
+        press = {("fi", "500"): a["z500"] * 9.80665, ("fi", "1000"): a["z1000"] * 9.80665,
+                 ("fi", "250"): a["z250"] * 9.80665, ("t", "850"): a["t850"], ("t", "500"): a["t500"],
+                 ("relhum", "850"): a["rh850"], ("relhum", "700"): a["rh700"],
+                 ("u", "250"): a["u250"], ("v", "250"): a["v250"]}
+        items = [(p, None, v) for p, v in single.items()] + [(p, lv, v) for (p, lv), v in press.items()]
+        for p, lv, v in items:
+            folder = os.path.join(OUT, "icon", hh, p)
+            os.makedirs(folder, exist_ok=True)
+            kind = "pressure-level" if lv else "single-level"
+            name = f"icon-eu_europe_regular-lat-lon_{kind}_{stamp}_{st:03d}_{lv + '_' if lv else ''}{p.upper()}.grib2.bz2"
+            with open(os.path.join(folder, name), "wb") as f:
+                f.write(bz2.compress(encode(v, -23.5, lat1d=lat), 1))
+    print("ICON-EU", run, sorted(steps))
+
+
+def write_gefs(run, steps, members=31):
+    lat = np.linspace(90, -90, 361)
+    lon = np.arange(720) * 0.5
+    d, hh = run.strftime("%Y%m%d"), run.strftime("%H")
+    folder = os.path.join(OUT, "gefs", f"gefs.{d}", hh, "atmos", "pgrb2ap5")
+    os.makedirs(folder, exist_ok=True)
+    names = ["gec00"] + [f"gep{i:02d}" for i in range(1, members)]
+    for mi, mem in enumerate(names):
+        for fh in sorted(steps):
+            a = atmosphere(lon + 4 * mi, run.hour + fh + mi, 3000 + mi * 7 + fh, lat1d=lat)
+            when = "anl" if fh == 0 else f"{fh} hour fcst"
+            recs = [("HGT", "500 mb", when, a["z500"] + 3 * mi), ("TMP", "850 mb", when, a["t850"] - 0.1 * mi),
+                    ("PRMSL", "mean sea level", when, a["mslp"])]
+            if fh:
+                recs.append(("APCP", "surface", f"{fh - 6}-{fh} hour acc fcst", a["rate6"]))
+            path = os.path.join(folder, f"{mem}.t{hh}z.pgrb2a.0p50.f{fh:03d}")
+            lines, off = [], 0
+            with open(path, "wb") as f:
+                for n, (var, lev, tm, val) in enumerate(recs, 1):
+                    msg = encode(val, 0.0, lat1d=lat)
+                    f.write(msg)
+                    lines.append(f"{n}:{off}:d={run:%Y%m%d%H}:{var}:{lev}:{tm}:ENS=+{mi}")
+                    off += len(msg)
+            with open(path + ".idx", "w") as f:
+                f.write("\n".join(lines) + "\n")
+    print("GEFS", run, sorted(steps))
+
+
+def write_ens(run, steps, members=50):
+    lat = np.linspace(90, -90, 181)  # griglia di prova a 1° per contenere lo spazio
+    lon = -180 + np.arange(360) * 1.0
+    d, hh = run.strftime("%Y%m%d"), run.strftime("%H")
+    folder = os.path.join(OUT, "ens", d, f"{hh}z", "ifs", "0p25", "enfo")
+    os.makedirs(folder, exist_ok=True)
+    for st in sorted(steps):
+        name = f"{d}{hh}0000-{st}h-enfo-ef"
+        lines, off = [], 0
+        with open(os.path.join(folder, name + ".grib2"), "wb") as f:
+            for m in range(1, members + 1):
+                a = atmosphere(lon + 3 * m, run.hour + st + m, 4000 + m * 11 + st, lat1d=lat)
+                cum = sum(atmosphere(lon + 3 * m, run.hour + k + 6 + m, 4000 + m * 11 + k, lat1d=lat)["rate6"]
+                          for k in range(0, st, 6)) if st else a["mslp"] * 0
+                for p, lt, lev, val in (("gh", "pl", "500", a["z500"] - 2 * m), ("t", "pl", "850", a["t850"]),
+                                        ("msl", "sfc", None, a["mslp"]), ("tp", "sfc", None, cum / 1000.0),
+                                        ("2t", "sfc", None, a["t2m"])):
+                    msg = encode(val, -180.0, lat1d=lat)
+                    f.write(msg)
+                    e = {"type": "pf", "stream": "enfo", "step": str(st), "levtype": lt, "param": p,
+                         "number": str(m), "_offset": off, "_length": len(msg)}
+                    if lev:
+                        e["levelist"] = lev
+                    lines.append(json.dumps(e))
+                    off += len(msg)
+        with open(os.path.join(folder, name + ".index"), "w") as f:
+            f.write("\n".join(lines) + "\n")
+    print("ENS", run, sorted(steps))
 
 
 if __name__ == "__main__":
-    write_gfs(BASE, [0, 6, 12, 48, 192])
-    write_ecmwf(BASE, [0, 6, 12, 150, 156, 240])
-    write_ecmwf(BASE + dt.timedelta(hours=6), [0, 6, 12, 144])
+    which = sys.argv[3].split(",") if len(sys.argv) > 3 else ["gfs", "ecmwf", "aifs", "icon", "gefs", "ens"]
+    if "gfs" in which:
+        write_gfs(BASE, [0, 6, 12, 48, 192])
+    if "ecmwf" in which:
+        write_ecmwf(BASE, [0, 6, 12, 150, 156, 240])
+        write_ecmwf(BASE + dt.timedelta(hours=6), [0, 6, 12, 144])
+    if "aifs" in which:
+        write_ecmwf(BASE, [0, 6, 12, 240], top="aifs", path="aifs-single", aifs=True)
+    if "icon" in which:
+        write_icon(BASE, [0, 6, 12, 120])
+    if "gefs" in which:
+        write_gefs(BASE, [0, 6, 12, 240])
+    if "ens" in which:
+        write_ens(BASE, [0, 6, 12, 240])

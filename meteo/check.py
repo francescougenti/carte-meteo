@@ -21,7 +21,8 @@ def main(argv=None):
     if a.manifest_url:
         try:
             sep = "&" if "?" in a.manifest_url else "?"
-            published = json.loads(http_get(f"{a.manifest_url}{sep}t={int(time.time())}", tries=2)).get("models", {})
+            m = json.loads(http_get(f"{a.manifest_url}{sep}t={int(time.time())}", tries=2))
+            published = {**m.get("models", {}), **m.get("ensembles", {})}
         except Exception as e:
             log(f"Manifest pubblicato non leggibile ({e}): genero tutto")
     need = []

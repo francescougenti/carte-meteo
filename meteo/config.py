@@ -129,3 +129,38 @@ CHARTS = [
 ]
 CHART_BY_ID = {c["id"]: c for c in CHARTS}
 GROUPS = ["Pressione", "Temperature", "Precipitazioni e nubi", "Vento e instabilità"]
+
+# --------------------------------------------------------------------------------------
+# Località dei meteogrammi e dei pennacchi dell'ensemble
+# --------------------------------------------------------------------------------------
+CITIES = [
+    dict(id="ostuni", name="Ostuni", lat=40.729, lon=17.578),
+    dict(id="bari", name="Bari", lat=41.117, lon=16.872),
+    dict(id="lecce", name="Lecce", lat=40.352, lon=18.172),
+    dict(id="napoli", name="Napoli", lat=40.852, lon=14.268),
+    dict(id="roma", name="Roma", lat=41.893, lon=12.483),
+    dict(id="firenze", name="Firenze", lat=43.770, lon=11.256),
+    dict(id="bologna", name="Bologna", lat=44.494, lon=11.343),
+    dict(id="milano", name="Milano", lat=45.464, lon=9.190),
+    dict(id="torino", name="Torino", lat=45.070, lon=7.687),
+    dict(id="venezia", name="Venezia", lat=45.441, lon=12.316),
+    dict(id="palermo", name="Palermo", lat=38.116, lon=13.361),
+    dict(id="cagliari", name="Cagliari", lat=39.223, lon=9.121),
+]
+
+# --------------------------------------------------------------------------------------
+# Prodotti dell'ensemble
+# --------------------------------------------------------------------------------------
+PAL["spread"] = ["#fff7c2", "#fde38a", "#fdc35c", "#fb9a3d", "#f06a2e", "#d83a2c", "#b01f45", "#7d1b6a",
+                 "#4f1c7c"]
+ENS_REGIONS = ["europa", "emisfero_nord"]
+SPAGHETTI_LEVELS = [(552, "#1f5fbf"), (576, "#c8102e")]
+ENS_PRODUCTS = [
+    dict(id="spaghetti", label="Spaghetti 500 hPa",
+         title="Isoipse 552 dam (blu) e 576 dam (rosso) di ogni membro; linee spesse: media dell'ensemble",
+         unit="", levels=[], pal=None, extend="neither"),
+    dict(id="media", label="Media e dispersione 500 hPa",
+         title="Geopotenziale medio a 500 hPa (dam, linee) e dispersione tra i membri (dam, colori)",
+         unit="dam", pal="spread", levels=[1, 2, 3, 4, 5, 6, 8, 10, 12, 15], extend="max"),
+]
+ENS_PRODUCT_BY_ID = {p["id"]: p for p in ENS_PRODUCTS}

@@ -151,7 +151,10 @@ class Canvas:
         pts = PC.transform_points(self.proj, XX, YY)
         lon, lat = pts[..., 0], pts[..., 1]
         dlat, dlon = float(lats[1] - lats[0]), float(lons[1] - lons[0])
-        ci = np.mod((lon - float(lons[0])) / dlon, len(lons))
+        self.glob = len(lons) * dlon >= 359.9  # griglia globale oppure ad area limitata (es. ICON-EU)
+        ci = (lon - float(lons[0])) / dlon
+        if self.glob:
+            ci = np.mod(ci, len(lons))
         cj = (lat - float(lats[0])) / dlat
         self.coords = np.array([cj, ci])
         self.lon, self.lat = lon, lat
@@ -164,8 +167,11 @@ class Canvas:
         self.arrow_xy = (XX[sl], YY[sl])
 
     def cut(self, a):
-        src = np.concatenate([a, a[:, :1]], axis=1)  # colonna ciclica per i 180°
-        return map_coordinates(src, self.coords, order=1, mode="nearest").astype(np.float32)
+        if self.glob:
+            src = np.concatenate([a, a[:, :1]], axis=1)  # colonna ciclica per i 180°
+            return map_coordinates(src, self.coords, order=1, mode="nearest").astype(np.float32)
+        # fuori dal dominio del modello: vuoto
+        return map_coordinates(a, self.coords, order=1, mode="constant", cval=np.nan).astype(np.float32)
 
     def header(self, model, chart, run, valid, lead, step_run):
         self.t_title.set_text(f"{model['short']} – {chart['label']}")
@@ -213,6 +219,20 @@ class Canvas:
         cax.set_title(chart["unit"], fontsize=7.5, loc="left", pad=1.5, color="#333333")
 
 
+    def legend(self, entries):
+        """Legenda al posto della barra dei colori: entries = [(colore, spessore, testo), ...]."""
+        cax = self.cax
+        cax.cla()
+        cax.set_xlim(0, 1)
+        cax.set_ylim(0, 1)
+        cax.axis("off")
+        w = 1.0 / len(entries)
+        for i, (col, lw, txt) in enumerate(entries):
+            x0 = i * w + w * 0.12
+            cax.plot([x0, x0 + w * 0.16], [0.5, 0.5], color=col, linewidth=lw, solid_capstyle="butt")
+            cax.text(x0 + w * 0.2, 0.5, txt, va="center", ha="left", fontsize=8, color="#222222")
+
+
 class Fields(dict):
     """Campi ritagliati sull'area, calcolati al primo uso."""
 
@@ -239,9 +259,9 @@ class Ctx:
         self.mappable = cs
 
     def lines(self, Z, levels, color="#1b1b1b", lw=0.6, label=True, fmt="%d", fs=6.5, ls="solid",
-              z=6, halo=None):
+              z=6, halo=None, alpha=None):
         cs = self.ax.contour(self.cv.xs, self.cv.ys, Z, levels=levels, colors=color, linewidths=lw,
-                             linestyles=ls, transform=self.cv.proj, zorder=z)
+                             linestyles=ls, transform=self.cv.proj, zorder=z, alpha=alpha)
         self.artists.append(cs)
         if label:
             try:
@@ -433,3 +453,57 @@ def render_step(job):
                 x.clear()
     full = sorted(c for c, rs in produced.items() if len(rs) == len(job["regions"]))
     return h, full
+
+
+# --------------------------------------------------------------------------------------
+# Ensemble: spaghetti e media/dispersione del geopotenziale a 500 hPa
+# --------------------------------------------------------------------------------------
+def _darker(col):
+    from matplotlib.colors import to_rgb
+    r, g, b = to_rgb(col)
+    return (r * 0.6, g * 0.6, b * 0.6)
+
+
+def render_ens_step(job):
+    data = np.load(job["npz"])
+    lats, lons, members = data["_lats"], data["_lons"], data["z500"]
+    run = parse_iso(job["run"])
+    h = job["h"]
+    valid = run + dt.timedelta(hours=h)
+    n = members.shape[0]
+    produced = set()
+    for rid in job["regions"]:
+        reg = C.REGION_BY_ID[rid]
+        key = ("ens", rid, lats.shape[0], lons.shape[0])
+        cv = _CANVAS.get(key)
+        if cv is None:
+            cv = _CANVAS[key] = Canvas(reg, lats, lons)
+        cut = np.array([cv.cut(m) for m in members])
+        mean = np.nanmean(cut, axis=0)
+        spread = np.nanstd(cut, axis=0)
+        for pid in job["products"]:
+            pr = C.ENS_PRODUCT_BY_ID[pid]
+            x = Ctx(cv, Fields(cv, {}))
+            try:
+                if pid == "spaghetti":
+                    for lev, col in C.SPAGHETTI_LEVELS:
+                        for m in cut:
+                            x.lines(m, [lev], color=col, lw=0.55, label=False, z=6, alpha=0.75)
+                        x.lines(mean, [lev], color=_darker(col), lw=2.4, label=False, z=7)
+                    cv.legend([(C.SPAGHETTI_LEVELS[0][1], 1.2, f"552 dam, {n} membri"),
+                               (C.SPAGHETTI_LEVELS[1][1], 1.2, f"576 dam, {n} membri"),
+                               ("#333333", 2.4, "media dell'ensemble")])
+                else:
+                    x.fill(spread, pr)
+                    x.lines(mean, np.arange(460, 610, 4), color="#111111", lw=0.7, halo=HALO_W)
+                    cv.colorbar(pr)
+                cv.header(job["model"], pr, run, valid, h, run)
+                save_png(cv.fig, os.path.join(job["out"], rid, pid, f"{h:03d}.png"))
+                produced.add((rid, pid))
+            except Exception:
+                print(f"  ! errore nel disegno {job['model']['id']} {rid} {pid} +{h}h", flush=True)
+                traceback.print_exc()
+            finally:
+                x.clear()
+    ok = sorted({p for _, p in produced if all((r, p) in produced for r in job["regions"])})
+    return h, ok

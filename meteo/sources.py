@@ -5,6 +5,7 @@ Usa solo la libreria standard di Python, così il controllo orario non richiede 
 GFS   -> NOAA/NCEP, file GRIB2 0.25° su AWS (Open Data) con ripiego su NOMADS
 ECMWF -> ECMWF Open Data (IFS 0.25°, licenza CC BY 4.0) con ripiego sul mirror AWS
 """
+import bz2
 import datetime as dt
 import json
 import os
@@ -109,6 +110,8 @@ class Run:
 # --------------------------------------------------------------------------------------
 class GFS:
     id = "gfs"
+    kind = "det"
+    regions = None  # tutte le aree
     label = "GFS"
     long_label = "GFS 0.25° (NOAA/NCEP)"
     chart_label = "GFS 0.25°"
@@ -203,12 +206,19 @@ class GFS:
             return a - 273.15
         return a  # RH %, vento m/s, precipitazione kg/m² = mm, CAPE J/kg, nubi %, PWAT mm
 
+    def derive(self, arrays):
+        return arrays
+
 
 # --------------------------------------------------------------------------------------
 # ECMWF IFS (open data)
 # --------------------------------------------------------------------------------------
 class ECMWF:
     id = "ecmwf"
+    kind = "det"
+    regions = None
+    path = "ifs"
+    env_root = "METEO_ECMWF_ROOT"
     label = "ECMWF"
     long_label = "ECMWF IFS 0.25° (Open Data)"
     chart_label = "ECMWF IFS 0.25°"
@@ -249,13 +259,13 @@ class ECMWF:
 
     def url(self, root, t, step, stream):
         d, h = t.strftime("%Y%m%d"), t.strftime("%H")
-        return f"{root}/{d}/{h}z/ifs/0p25/{stream}/{d}{h}0000-{step}h-{stream}-fc.grib2"
+        return f"{root}/{d}/{h}z/{self.path}/0p25/{stream}/{d}{h}0000-{step}h-{stream}-fc.grib2"
 
     def latest(self):
-        if os.environ.get("METEO_ECMWF_ROOT"):
+        if os.environ.get(self.env_root):
             self.roots = self.roots[:1]
         for t in cycles_back():
-            streams = ["oper"] if t.hour in (0, 12) else ["oper", "scda"]
+            streams = ["oper"] if t.hour in (0, 12) or self.path != "ifs" else ["oper", "scda"]
             for root in self.roots:
                 for stream in streams:
                     u = self.url(root, t, self.last_step(t), stream)
@@ -285,7 +295,7 @@ class ECMWF:
             return a / 100.0
         if key.startswith("z"):
             return a / 10.0
-        if key in ("t850", "t500", "t2m"):
+        if key in ("t850", "t500", "t700", "t2m"):
             return a - 273.15
         if key == "tp_total":
             return a * 1000.0  # m -> mm
@@ -293,19 +303,144 @@ class ECMWF:
             return a * 100.0
         return a
 
+    def derive(self, arrays):
+        return arrays
+
+
+def rh_from_q(q, t_c, p):
+    """Umidità relativa (%) da umidità specifica (kg/kg) e temperatura (°C) a p hPa."""
+    e = q * p / (0.622 + 0.378 * q)
+    es = 6.112 * np.exp(17.67 * t_c / (t_c + 243.5))
+    return np.clip(100.0 * e / es, 0.0, 100.0)
+
+
+class AIFS(ECMWF):
+    """Modello a intelligenza artificiale di ECMWF (AIFS Single), stesso portale Open Data."""
+    id = "aifs"
+    label = "AIFS"
+    long_label = "ECMWF AIFS 0.25° (intelligenza artificiale)"
+    chart_label = "ECMWF AIFS 0.25°"
+    credit = "Dati: ECMWF Open Data – AIFS Single 0.25° (licenza CC BY 4.0)"
+    path = "aifs-single"
+    env_root = "METEO_AIFS_ROOT"
+    regions = ["italia", "europa"]
+    max_step = 240
+    roots = [
+        os.environ.get("METEO_AIFS_ROOT") or "https://data.ecmwf.int/forecasts",
+        "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com",
+    ]
+    FIELDS = dict(ECMWF.FIELDS)
+    FIELDS.update({
+        "rh850": (["r"], "pl", "850"),  # AIFS non dà l'umidità relativa: si ricava da q e T
+        "rh700": (["r"], "pl", "700"),
+        "q850": (["q"], "pl", "850"),
+        "q700": (["q"], "pl", "700"),
+        "t700": (["t"], "pl", "700"),
+        "pwat": (["tcwv", "tcw"], "sfc", None),
+    })
+
+    def last_step(self, t):
+        return self.max_step
+
+    def convert(self, key, a):
+        if key == "tp_total":
+            return a  # AIFS dà la pioggia già in kg/m² (= mm), l'IFS invece in metri
+        return super().convert(key, a)
+
+    def derive(self, arrays):
+        for lev in (850, 700):
+            q, t = arrays.get(f"q{lev}"), arrays.get(f"t{lev}")
+            if f"rh{lev}" not in arrays and q is not None and t is not None:
+                arrays[f"rh{lev}"] = rh_from_q(q, t, float(lev)).astype(np.float32)
+        for k in ("q850", "q700", "t700"):
+            arrays.pop(k, None)
+        return arrays
+
+
+class ICONEU:
+    """Modello tedesco ICON-EU (DWD), griglia regolare di 0.0625° (circa 7 km) sull'Europa."""
+    id = "icon-eu"
+    kind = "det"
+    label = "ICON-EU"
+    long_label = "ICON-EU 0.0625° (DWD)"
+    chart_label = "ICON-EU 0.0625°"
+    credit = "Dati: Deutscher Wetterdienst (DWD) – ICON-EU"
+    regions = ["italia", "europa_ovest"]
+    max_step = 120
+    roots = [os.environ.get("METEO_ICON_ROOT") or "https://opendata.dwd.de/weather/nwp/icon-eu/grib"]
+    # campo -> (parametro DWD, livello in hPa o None)
+    FIELDS = {
+        "mslp": ("pmsl", None), "z500": ("fi", "500"), "z1000": ("fi", "1000"), "z250": ("fi", "250"),
+        "t850": ("t", "850"), "t500": ("t", "500"), "t2m": ("t_2m", None),
+        "rh850": ("relhum", "850"), "rh700": ("relhum", "700"),
+        "u10": ("u_10m", None), "v10": ("v_10m", None), "u250": ("u", "250"), "v250": ("v", "250"),
+        "gust": ("vmax_10m", None), "cape": ("cape_ml", None), "tcc": ("clct", None), "pwat": ("tqv", None),
+        "tp_total": ("tot_prec", None),
+    }
+
+    def steps(self, run):
+        return list(range(0, self.max_step + 1, 6))
+
+    def url(self, root, t, step, param, level):
+        stamp, h = t.strftime("%Y%m%d%H"), t.strftime("%H")
+        kind = "pressure-level" if level else "single-level"
+        lev = f"{level}_" if level else ""
+        return (f"{root}/{h}/{param}/icon-eu_europe_regular-lat-lon_{kind}_{stamp}_{step:03d}_"
+                f"{lev}{param.upper()}.grib2.bz2")
+
+    def latest(self):
+        for t in cycles_back():
+            if http_exists(self.url(self.roots[0], t, self.max_step, "tot_prec", None)):
+                return Run(self, t, self.roots[0])
+        return None
+
+    def plan(self, run, step):
+        return {k: (self.url(run.root, run.time, step, p, lev), None, 0) for k, (p, lev) in self.FIELDS.items()}
+
+    def convert(self, key, a):
+        if key == "mslp":
+            return a / 100.0
+        if key.startswith("z"):
+            return a / 9.80665 / 10.0  # geopotenziale (m²/s²) -> dam
+        if key in ("t850", "t500", "t2m"):
+            return a - 273.15
+        return a
+
+    def derive(self, arrays):
+        return arrays
+
 
 try:  # numpy serve solo per convert() durante la generazione, non al controllo orario
     import numpy as np
 except ImportError:  # pragma: no cover
     np = None
 
-MODELS = {"gfs": GFS(), "ecmwf": ECMWF()}
+def fetch(url, rng):
+    data = http_get(url, rng)
+    if url.endswith(".bz2"):
+        data = bz2.decompress(data)
+    return data
 
 
 def download(plan, threads=8):
-    """Scarica in parallelo i pezzi di GRIB indicati dal piano. Restituisce {campo: (byte, sub)}."""
+    """Scarica in parallelo i pezzi di GRIB indicati dal piano. Restituisce {campo: (byte, sub)}.
+
+    Un campo che manca sul server (404) viene saltato: la carta che lo usa non sarà disegnata.
+    """
     def one(item):
         key, (url, rng, sub) = item
-        return key, (http_get(url, rng), sub)
+        try:
+            return key, (fetch(url, rng), sub)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return key, None
+            raise
     with ThreadPoolExecutor(threads) as ex:
-        return dict(ex.map(one, plan.items()))
+        return {k: v for k, v in ex.map(one, plan.items()) if v is not None}
+
+
+from .ensemble_sources import ECMWFEns, GEFSEns  # noqa: E402
+
+# ordine di elaborazione: prima i deterministici, poi gli ensemble (più pesanti)
+MODELS = {"gfs": GFS(), "ecmwf": ECMWF(), "aifs": AIFS(), "icon-eu": ICONEU(),
+          "gefs": GEFSEns(), "ecmwf-ens": ECMWFEns()}

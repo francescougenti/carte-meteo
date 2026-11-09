@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Carte meteo GFS ed ECMWF</title>
-<meta name="description" content="Carte meteo GFS ed ECMWF aggiornate a ogni nuova corsa: Italia, Europa, Emisfero Nord e Nord America.">
+<title>Carte meteo: GFS, ECMWF, AIFS, ICON-EU ed ensemble</title>
+<meta name="description" content="Carte meteo GFS, ECMWF, AIFS e ICON-EU, ensemble e meteogrammi, aggiornati a ogni nuova corsa.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='29' fill='none' stroke='%2313283D' stroke-width='3'/%3E%3Ccircle cx='32' cy='32' r='19' fill='none' stroke='%2313283D' stroke-width='3'/%3E%3Ctext x='32' y='42' font-family='Arial' font-weight='700' font-size='28' text-anchor='middle' fill='%23C8102E'%3EB%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,7 +35,7 @@ button,select{font:inherit;color:inherit}
 .models button{border:0;background:none;padding:6px 16px;cursor:pointer;font-weight:600;font-variation-settings:"wdth" 90}
 .models button+button{border-left:1px solid var(--ink)}
 .models button[aria-pressed="true"]{background:var(--ink);color:#fff}
-.runs{margin-left:auto;display:flex;gap:22px;font-size:13px;color:var(--muted)}
+.runs{margin-left:auto;display:flex;gap:6px 16px;font-size:12.5px;color:var(--muted);flex-wrap:wrap;justify-content:flex-end;max-width:640px}
 .runs b{color:var(--ink);font-weight:600}
 .runs .fresh{color:var(--bassa)}
 
@@ -119,61 +119,77 @@ footer a{color:inherit}
   .top{gap:12px}
 }
 @media (prefers-reduced-motion:reduce){.timeline{scroll-behavior:auto}.toast{transition:none}}
+
+.side select{display:block;margin:0 16px 8px;width:calc(100% - 32px);padding:6px 8px;border:1px solid var(--rule);border-radius:6px;background:#fff;font-size:14px}
+.side label{display:block;font-size:12.5px;color:var(--muted);margin:0 16px 3px}
+.side .note{font-size:12.5px;color:var(--muted);margin:6px 16px 0;line-height:1.35}
+.swatch{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:7px}
+
+/* ---------- meteogrammi ---------- */
+.loc-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:10px}
+.loc-head h2{margin:0;font-size:30px;line-height:1;font-variation-settings:"wdth" 75}
+.loc-head p{margin:0;color:var(--muted);font-size:13.5px}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:10px 12px 6px}
+.card h3{margin:0 0 4px;font-size:14px;font-weight:600}
+.card h3 small{font-weight:400;color:var(--muted);margin-left:6px}
+.card .box{position:relative;height:220px}
+.section-title{grid-column:1/-1;margin:14px 0 0;font-size:18px;font-variation-settings:"wdth" 85}
+.section-title small{font-size:13px;color:var(--muted);font-weight:400;margin-left:8px}
+.hidden{display:none !important}
+@media (max-width:1100px){.charts{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header class="top">
   <h1>Carte meteo</h1>
-  <nav class="models" aria-label="Modello" id="models">
-    <button data-model="gfs" aria-pressed="true">GFS</button>
-    <button data-model="ecmwf" aria-pressed="false">ECMWF</button>
-    <button data-model="confronto" aria-pressed="false">Confronto</button>
+  <nav class="models" aria-label="Sezione" id="views">
+    <button data-view="carte" aria-pressed="true">Carte</button>
+    <button data-view="confronto" aria-pressed="false">Confronto</button>
+    <button data-view="ensemble" aria-pressed="false">Ensemble</button>
+    <button data-view="localita" aria-pressed="false">Località</button>
   </nav>
   <div class="runs" id="runs"></div>
 </header>
 
 <div class="layout" id="app">
-  <aside class="side">
-    <section>
-      <h2>Area</h2>
-      <div id="regions"></div>
-    </section>
-    <section>
-      <h2>Carte</h2>
-      <div id="charts"></div>
-      <select class="chartSelect" id="chartSelect" aria-label="Carta"></select>
-    </section>
-  </aside>
+  <aside class="side" id="side"></aside>
 
   <main class="stage">
-    <div class="readout">
-      <div class="lead" id="lead">–</div>
-      <div class="when" id="when">Caricamento delle carte…</div>
-      <div class="controls">
-        <button class="ctl" id="prev" aria-label="Scadenza precedente" title="Scadenza precedente (freccia sinistra)">
-          <svg viewBox="0 0 16 16"><path d="M11 2 4 8l7 6z"/></svg></button>
-        <button class="ctl play" id="play" aria-label="Avvia animazione" title="Avvia o ferma l'animazione (barra spaziatrice)">
-          <svg viewBox="0 0 16 16" id="playIcon"><path d="M4 2v12l10-6z"/></svg></button>
-        <button class="ctl" id="next" aria-label="Scadenza successiva" title="Scadenza successiva (freccia destra)">
-          <svg viewBox="0 0 16 16"><path d="M5 2l7 6-7 6z"/></svg></button>
-        <select class="speed" id="speed" aria-label="Velocità dell'animazione">
-          <option value="1100">Lenta</option>
-          <option value="650" selected>Normale</option>
-          <option value="320">Veloce</option>
-        </select>
+    <div id="mapview">
+      <div class="readout">
+        <div class="lead" id="lead">–</div>
+        <div class="when" id="when">Caricamento delle carte…</div>
+        <div class="controls">
+          <button class="ctl" id="prev" aria-label="Scadenza precedente" title="Scadenza precedente (freccia sinistra)">
+            <svg viewBox="0 0 16 16"><path d="M11 2 4 8l7 6z"/></svg></button>
+          <button class="ctl play" id="play" aria-label="Avvia animazione" title="Avvia o ferma l'animazione (barra spaziatrice)">
+            <svg viewBox="0 0 16 16" id="playIcon"><path d="M4 2v12l10-6z"/></svg></button>
+          <button class="ctl" id="next" aria-label="Scadenza successiva" title="Scadenza successiva (freccia destra)">
+            <svg viewBox="0 0 16 16"><path d="M5 2l7 6-7 6z"/></svg></button>
+          <select class="speed" id="speed" aria-label="Velocità dell'animazione">
+            <option value="1100">Lenta</option>
+            <option value="650" selected>Normale</option>
+            <option value="320">Veloce</option>
+          </select>
+        </div>
       </div>
+      <div class="maps" id="maps"></div>
+      <div class="timeline" id="timeline" aria-label="Scadenze"></div>
+      <p class="hint" id="hint"></p>
     </div>
-    <div class="maps" id="maps"></div>
-    <div class="timeline" id="timeline" aria-label="Scadenze"></div>
-    <p class="hint" id="hint"></p>
+    <div id="locview" class="hidden">
+      <div class="loc-head"><h2 id="locName"></h2><p id="locInfo"></p></div>
+      <div class="charts" id="locCharts"></div>
+    </div>
   </main>
 </div>
 
 <footer>
-  Dati GFS: NOAA/NCEP. Dati ECMWF: <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF Open Data</a>,
-  licenza <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>; le carte sono un'elaborazione grafica di questo sito,
-  non prodotti ufficiali di NOAA o ECMWF. Contorni geografici: Natural Earth. Gli orari dei modelli sono in UTC
-  (ora italiana = UTC+1, UTC+2 con l'ora legale). Il sito controlla le nuove corse ogni mezz'ora e si aggiorna da solo.
+  Dati GFS e GEFS: NOAA/NCEP. Dati ECMWF, AIFS ed ENS: <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF Open Data</a>,
+  licenza <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Dati ICON-EU: Deutscher Wetterdienst (DWD), opendata.dwd.de.
+  Le carte e i grafici sono un'elaborazione di questo sito, non prodotti ufficiali degli enti. Contorni geografici: Natural Earth.
+  Gli orari dei modelli sono in UTC (ora italiana = UTC+1, UTC+2 con l'ora legale). Il sito controlla le nuove corse ogni mezz'ora e si aggiorna da solo.
 </footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -182,8 +198,13 @@ footer a{color:inherit}
 "use strict";
 const $ = (id) => document.getElementById(id);
 const H = 36e5;
-const S = { m: null, model: "gfs", region: "italia", chart: "z500", valid: null, playing: false, timer: null };
+const COLORS = { gfs: "#0B4EA2", ecmwf: "#C8102E", aifs: "#7A3FB0", "icon-eu": "#16834A" };
+const ENS_DET = { gefs: "gfs", "ecmwf-ens": "ecmwf" };
+const S = { m: null, view: "carte", model: "gfs", a: "gfs", b: "ecmwf", ens: "gefs", product: "spaghetti",
+            region: "italia", chart: "z500", valid: null, city: "ostuni", plume: "gefs", playing: false, timer: null };
 const cache = new Map();
+const json = new Map();
+let charts = [];
 
 const fDay = new Intl.DateTimeFormat("it-IT", { weekday: "short", day: "numeric", timeZone: "UTC" });
 const fMonth = new Intl.DateTimeFormat("it-IT", { month: "short", timeZone: "UTC" });
@@ -193,6 +214,7 @@ const hh = (t) => String(new Date(t).getUTCHours()).padStart(2, "0");
 const runLabel = (t) => `${hh(t)}Z di ${fRun.format(new Date(t))}`;
 const pad3 = (n) => String(n).padStart(3, "0");
 const runId = (t) => new Date(t).toISOString().slice(0, 13).replace(/[-T]/g, "");
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 function ago(t) {
   const min = Math.round((Date.now() - t) / 6e4);
@@ -206,48 +228,72 @@ function ago(t) {
 async function fetchManifest() {
   const r = await fetch(`data/manifest.json?t=${Date.now()}`, { cache: "no-store" });
   if (!r.ok) throw new Error(r.status);
-  return r.json();
+  const m = await r.json();
+  m.ensembles = m.ensembles || {};
+  return m;
 }
-function steps(model) {
-  const M = S.m.models[model];
+async function getJSON(u) {
+  if (!json.has(u)) json.set(u, fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+  return json.get(u);
+}
+const order = () => S.m.order || [...Object.keys(S.m.models), ...Object.keys(S.m.ensembles)];
+const detIds = () => order().filter((id) => S.m.models[id]);
+const ensIds = () => order().filter((id) => S.m.ensembles[id]);
+const allRegions = () => S.m.regions.map((r) => r.id);
+
+function panes() {
+  if (S.view === "carte") return [{ kind: "det", id: S.model }];
+  if (S.view === "confronto") return [{ kind: "det", id: S.a }, { kind: "det", id: S.b }];
+  if (S.view === "ensemble") return [{ kind: "ens", id: S.ens }];
+  return [];
+}
+const src = (p) => (p.kind === "det" ? S.m.models[p.id] : S.m.ensembles[p.id]);
+const keyOf = (p) => (p.kind === "det" ? S.chart : S.product);
+const paneRegions = (p) => (src(p) && src(p).regions) || allRegions();
+function okRegions() {
+  let r = allRegions();
+  for (const p of panes()) r = r.filter((x) => paneRegions(p).includes(x));
+  return r;
+}
+function steps(p) {
+  const M = src(p);
   if (!M) return [];
   const run = Date.parse(M.run);
-  return M.steps.map((s) => ({
-    model, h: s.h, run: Date.parse(s.run), valid: Date.parse(s.valid),
-    lead: (Date.parse(s.valid) - run) / H, older: s.run !== M.run, charts: new Set(s.charts),
-  }));
+  return M.steps.map((s) => {
+    const r = Date.parse(s.run || M.run);
+    return { pane: p, id: p.id, h: s.h, run: r, valid: Date.parse(s.valid), lead: (Date.parse(s.valid) - run) / H,
+             older: r !== run, charts: new Set(s.charts) };
+  });
 }
-const shown = () => (S.model === "confronto" ? ["gfs", "ecmwf"] : [S.model]).filter((m) => S.m.models[m]);
 function baseRun() {
-  const ms = shown();
-  return ms.length ? Date.parse(S.m.models[ms[0]].run) : 0;
+  const p = panes()[0];
+  return p && src(p) ? Date.parse(src(p).run) : 0;
 }
 function timeline() {
   const map = new Map();
-  for (const model of shown()) {
-    for (const s of steps(model)) {
+  panes().forEach((p, i) => {
+    for (const s of steps(p)) {
       const o = map.get(s.valid) || { valid: s.valid, by: {} };
-      o.by[model] = s;
+      o.by[p.id + "|" + i] = s;
       map.set(s.valid, o);
     }
-  }
+  });
   const base = baseRun();
   return [...map.values()].sort((a, b) => a.valid - b.valid).map((o) => {
     const list = Object.values(o.by);
     return { ...o, lead: (o.valid - base) / H, older: list.every((s) => s.older),
-             has: list.some((s) => s.charts.has(S.chart)) };
+             has: list.some((s) => s.charts.has(keyOf(s.pane))) };
   });
 }
-const url = (s, chart = S.chart, region = S.region) =>
-  `maps/${s.model}/${region}/${chart}/${pad3(s.h)}.png?r=${runId(s.run)}`;
+const url = (s) => `maps/${s.id}/${S.region}/${keyOf(s.pane)}/${pad3(s.h)}.png?r=${runId(s.run)}`;
 
-function img(src) {
-  let im = cache.get(src);
+function img(u) {
+  let im = cache.get(u);
   if (!im) {
     im = new Image();
     im.decoding = "async";
-    im.src = src;
-    cache.set(src, im);
+    im.src = u;
+    cache.set(u, im);
     if (cache.size > 400) cache.delete(cache.keys().next().value);
   }
   return im;
@@ -259,49 +305,115 @@ const loaded = (im) => new Promise((res) => {
   im.addEventListener("error", res, { once: true });
 });
 
-// ---------- interfaccia ----------
-function chartInfo(id) { return S.m.charts.find((c) => c.id === id); }
-function available(chart) { return shown().some((m) => (S.m.models[m].charts || []).includes(chart)); }
+// ---------- barra laterale ----------
+function el(tag, attrs = {}, text) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "onclick" || k === "onchange") e[k] = v; else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  if (text != null) e.textContent = text;
+  return e;
+}
+function section(title) {
+  const s = el("section");
+  s.append(el("h2", {}, title));
+  return s;
+}
+function opt(label, pressed, onclick, disabled, title) {
+  const b = el("button", { class: "opt", "aria-pressed": String(!!pressed), title }, label);
+  if (disabled) b.disabled = true;
+  b.onclick = onclick;
+  return b;
+}
+function modelSelect(label, value, onchange) {
+  const wrap = document.createDocumentFragment();
+  const id = "sel" + Math.random().toString(36).slice(2, 7);
+  wrap.append(el("label", { for: id }, label));
+  const sel = el("select", { id });
+  for (const m of detIds()) {
+    const o = el("option", { value: m }, S.m.models[m].short);
+    o.selected = m === value;
+    sel.append(o);
+  }
+  sel.onchange = () => onchange(sel.value);
+  wrap.append(sel);
+  return wrap;
+}
+function chartAvailable(c) { return panes().some((p) => (src(p)?.charts || []).includes(c)); }
 
 function renderSide() {
-  $("regions").innerHTML = "";
-  for (const r of S.m.regions) {
-    const b = document.createElement("button");
-    b.className = "opt"; b.textContent = r.label; b.setAttribute("aria-pressed", r.id === S.region);
-    b.onclick = () => { S.region = r.id; update(); };
-    $("regions").append(b);
+  const side = $("side");
+  side.innerHTML = "";
+  if (S.view === "carte") {
+    const s = section("Modello");
+    for (const m of detIds()) s.append(opt(S.m.models[m].short, m === S.model, () => { S.model = m; update(); }, false, S.m.models[m].label));
+    side.append(s);
+  } else if (S.view === "confronto") {
+    const s = section("Modelli affiancati");
+    s.append(modelSelect("A sinistra", S.a, (v) => { S.a = v; update(); }));
+    s.append(modelSelect("A destra", S.b, (v) => { S.b = v; update(); }));
+    side.append(s);
+  } else if (S.view === "ensemble") {
+    const s = section("Ensemble");
+    for (const m of ensIds()) s.append(opt(S.m.ensembles[m].short, m === S.ens, () => { S.ens = m; update(); }, false, S.m.ensembles[m].label));
+    side.append(s);
+  } else if (S.view === "localita") {
+    const s = section("Località");
+    for (const c of S.m.cities) s.append(opt(c.name, c.id === S.city, () => { S.city = c.id; renderSide(); showLoc(); writeHash(); }));
+    side.append(s);
+    const e = section("Pennacchio ensemble");
+    for (const m of ensIds()) e.append(opt(S.m.ensembles[m].short, m === S.plume, () => { S.plume = m; renderSide(); showLoc(); writeHash(); }));
+    if (!ensIds().length) e.append(el("p", { class: "note" }, "Gli ensemble non sono ancora stati generati."));
+    side.append(e);
+    return;
   }
-  const box = $("charts"), sel = $("chartSelect");
-  box.innerHTML = ""; sel.innerHTML = "";
+  const ok = okRegions();
+  const r = section("Area");
+  r.id = "regions";
+  for (const reg of S.m.regions) {
+    const allowed = ok.includes(reg.id);
+    r.append(opt(reg.label, reg.id === S.region, () => { S.region = reg.id; update(); }, !allowed,
+      allowed ? null : "Non disponibile per questo modello"));
+  }
+  side.append(r);
+  if (S.view === "ensemble") {
+    const p = section("Prodotto");
+    for (const pr of S.m.ens_products || []) p.append(opt(pr.label, pr.id === S.product, () => { S.product = pr.id; update(); }, false, pr.title));
+    side.append(p);
+    return;
+  }
+  const c = section("Carte");
+  c.id = "charts";
+  const sel = el("select", { class: "chartSelect", "aria-label": "Carta" });
   for (const g of S.m.groups) {
-    const h = document.createElement("h3"); h.textContent = g; box.append(h);
-    const og = document.createElement("optgroup"); og.label = g; sel.append(og);
-    for (const c of S.m.charts.filter((c) => c.group === g)) {
-      const b = document.createElement("button");
-      b.className = "opt"; b.textContent = c.label; b.title = c.title;
-      b.setAttribute("aria-pressed", c.id === S.chart);
-      if (!available(c.id)) { b.disabled = true; b.title = "Non disponibile per questo modello"; }
-      b.onclick = () => { S.chart = c.id; update(); };
-      box.append(b);
-      const o = document.createElement("option"); o.value = c.id; o.textContent = c.label;
-      o.selected = c.id === S.chart; o.disabled = !available(c.id); og.append(o);
+    c.append(el("h3", {}, g));
+    const og = el("optgroup", { label: g });
+    for (const ch of S.m.charts.filter((x) => x.group === g)) {
+      const av = chartAvailable(ch.id);
+      c.append(opt(ch.label, ch.id === S.chart, () => { S.chart = ch.id; update(); }, !av, av ? ch.title : "Non disponibile per questo modello"));
+      const o = el("option", { value: ch.id }, ch.label);
+      o.selected = ch.id === S.chart; o.disabled = !av;
+      og.append(o);
     }
+    sel.append(og);
   }
   sel.onchange = () => { S.chart = sel.value; update(); };
+  side.append(c, sel);
 }
 
 function renderRuns() {
   const out = [];
-  for (const id of ["gfs", "ecmwf"]) {
-    const M = S.m.models[id];
+  for (const id of order()) {
+    const M = S.m.models[id] || S.m.ensembles[id];
     if (!M) continue;
     const up = Date.parse(M.updated);
     const fresh = Date.now() - up < 3 * H;
-    out.push(`<span><b>${M.short}</b> corsa ${runLabel(Date.parse(M.run))}, <span class="${fresh ? "fresh" : ""}">pubblicata ${ago(up)}</span></span>`);
+    out.push(`<span title="${M.label}: pubblicata ${ago(up)}"><b>${M.short}</b> ${hh(Date.parse(M.run))}Z${fresh ? ' <span class="fresh">nuova</span>' : ""}</span>`);
   }
   $("runs").innerHTML = out.join("");
 }
 
+// ---------- carte ----------
 function renderTimeline(tl) {
   const box = $("timeline");
   box.innerHTML = "";
@@ -311,35 +423,32 @@ function renderTimeline(tl) {
     const key = d.toISOString().slice(0, 10);
     if (key !== day) {
       day = key;
-      const col = document.createElement("div"); col.className = "day";
+      const col = el("div", { class: "day" });
       col.innerHTML = `<div class="d">${fDay.format(d)} <span>${fMonth.format(d)}</span></div>`;
-      slots = document.createElement("div"); slots.className = "slots";
-      col.append(slots); box.append(col);
+      slots = el("div", { class: "slots" });
+      col.append(slots);
+      box.append(col);
     }
-    const b = document.createElement("button");
-    b.className = "slot" + (t.has ? "" : " na") + (t.older ? " older" : "");
-    b.textContent = S.model === "confronto" ? hh(t.valid) : (t.lead >= 0 ? `+${t.lead}` : t.lead);
+    const b = el("button", { class: "slot" + (t.has ? "" : " na") + (t.older ? " older" : "") },
+      S.view === "confronto" ? hh(t.valid) : `+${t.lead}`);
     b.title = `${fLocal.format(d)} ora italiana (${hh(t.valid)} UTC)` + (t.older ? " – da una corsa precedente" : "");
     b.dataset.valid = t.valid;
-    if (t.valid === S.valid) b.setAttribute("aria-current", "true");
     b.onclick = () => { stop(); S.valid = t.valid; show(); };
     slots.append(b);
   }
 }
-
 function renderMaps() {
   const box = $("maps");
-  const models = shown();
-  box.className = "maps" + (models.length > 1 ? " two" : "");
+  const ps = panes();
+  box.className = "maps" + (ps.length > 1 ? " two" : "");
   box.innerHTML = "";
-  for (const m of models) {
-    const f = document.createElement("figure");
-    f.className = "map"; f.dataset.model = m;
+  ps.forEach((p, i) => {
+    const f = el("figure", { class: "map" });
+    f.dataset.key = p.id + "|" + i;
     f.innerHTML = `<img alt=""><div class="missing"></div>`;
     box.append(f);
-  }
+  });
 }
-
 function nearest(tl, v) {
   if (!tl.length) return null;
   if (v == null) return tl[0].valid;
@@ -347,65 +456,87 @@ function nearest(tl, v) {
   for (const t of tl) if (Math.abs(t.valid - v) < Math.abs(best.valid - v)) best = t;
   return best.valid;
 }
-
-function update(keepValid = true) {
-  if (!available(S.chart)) S.chart = S.m.charts.find((c) => available(c.id))?.id || S.chart;
-  const tl = timeline();
-  S.valid = nearest(tl, keepValid ? S.valid : null);
-  for (const b of $("models").children) b.setAttribute("aria-pressed", b.dataset.model === S.model);
-  renderSide(); renderMaps(); renderTimeline(tl); show();
+function fixState() {
+  if (!S.m.models[S.model]) S.model = detIds()[0];
+  if (!S.m.models[S.a]) S.a = detIds()[0];
+  if (!S.m.models[S.b]) S.b = detIds()[1] || detIds()[0];
+  if (!S.m.ensembles[S.ens]) S.ens = ensIds()[0] || S.ens;
+  if (!S.m.ensembles[S.plume]) S.plume = ensIds()[0] || S.plume;
+  if (S.view === "ensemble" && !ensIds().length) S.view = "carte";
+  if (["carte", "confronto", "ensemble"].includes(S.view)) {
+    const ok = okRegions();
+    if (!ok.includes(S.region)) S.region = ok[0] || allRegions()[0];
+    if (S.view !== "ensemble" && !chartAvailable(S.chart)) S.chart = S.m.charts.find((c) => chartAvailable(c.id))?.id || S.chart;
+    if (S.view === "ensemble" && !(S.m.ens_products || []).some((p) => p.id === S.product)) S.product = (S.m.ens_products || [{}])[0].id;
+  }
 }
-
+function update() {
+  stop();
+  fixState();
+  for (const b of $("views").children) b.setAttribute("aria-pressed", b.dataset.view === S.view);
+  renderSide();
+  const loc = S.view === "localita";
+  $("mapview").classList.toggle("hidden", loc);
+  $("locview").classList.toggle("hidden", !loc);
+  if (loc) { showLoc(); writeHash(); return; }
+  const tl = timeline();
+  S.valid = nearest(tl, S.valid);
+  renderMaps(); renderTimeline(tl); show();
+}
+function titleOf() {
+  if (S.view === "ensemble") return (S.m.ens_products || []).find((p) => p.id === S.product)?.label || "";
+  return S.m.charts.find((c) => c.id === S.chart)?.label || "";
+}
 function show() {
   const tl = timeline();
   const t = tl.find((x) => x.valid === S.valid);
-  if (!t) return;
-  const info = chartInfo(S.chart);
+  if (!t) {
+    $("lead").textContent = "–";
+    $("when").textContent = "Nessuna carta disponibile per questa scelta.";
+    return;
+  }
   const region = S.m.regions.find((r) => r.id === S.region);
   const d = new Date(t.valid);
-  $("lead").textContent = S.model === "confronto" ? `${hh(t.valid)}Z` : `+${t.lead} h`;
-  const local = fLocal.format(d);
-  $("when").innerHTML = `${local.charAt(0).toUpperCase() + local.slice(1)} ora italiana` +
-    `<small>${info.label}, ${region.label}. Validità ${hh(t.valid)} UTC.</small>`;
+  $("lead").textContent = S.view === "confronto" ? `${hh(t.valid)}Z` : `+${t.lead} h`;
+  $("when").innerHTML = `${cap(fLocal.format(d))} ora italiana<small>${titleOf()}, ${region.label}. Validità ${hh(t.valid)} UTC.</small>`;
   for (const fig of $("maps").children) {
-    const m = fig.dataset.model, s = t.by[m], M = S.m.models[m];
+    const [id, idx] = fig.dataset.key.split("|");
+    const p = panes()[+idx], s = t.by[fig.dataset.key], M = src(p);
     const im = fig.querySelector("img"), miss = fig.querySelector(".missing");
-    if (!s || !s.charts.has(S.chart)) {
+    if (!s || !s.charts.has(keyOf(p))) {
       fig.classList.add("off");
+      const reach = Math.max(...steps(p).filter((x) => !x.older).map((x) => x.lead));
       miss.textContent = !s
-        ? `${M.short} non ha una carta per questa ora: la sua corsa arriva fino a +${Math.max(...steps(m).map((x) => x.lead))} h.`
+        ? `${M.short} non ha una carta per quest'ora: la sua corsa arriva fino a +${reach} h.`
         : s.h === 0 && /^prec/.test(S.chart)
-          ? `“${info.label}” parte dalla prima scadenza: all'istante iniziale non c'è ancora pioggia caduta.`
-          : `“${info.label}” non è disponibile a questa scadenza.`;
+          ? `“${titleOf()}” parte dalla prima scadenza: all'istante iniziale non c'è ancora pioggia caduta.`
+          : `“${titleOf()}” non è disponibile per ${M.short} a questa scadenza.`;
       continue;
     }
     fig.classList.remove("off");
-    const src = url(s);
-    const pre = img(src);
-    im.alt = `Carta ${M.short}: ${info.label}, ${region.label}, +${s.h} h`;
-    if (ready(pre) || !im.getAttribute("src")) im.src = src;
-    else loaded(pre).then(() => { if (S.valid === t.valid) im.src = src; });
+    const u = url(s);
+    const pre = img(u);
+    im.alt = `Carta ${M.short}: ${titleOf()}, ${region.label}, +${s.h} h`;
+    if (ready(pre) || !im.getAttribute("src")) im.src = u;
+    else loaded(pre).then(() => { if (S.valid === t.valid) im.src = u; });
   }
   for (const b of document.querySelectorAll(".slot")) {
     const cur = +b.dataset.valid === S.valid;
-    b.toggleAttribute("aria-current", cur);
-    if (cur) b.setAttribute("aria-current", "true");
+    if (cur) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
     if (cur && !S.playing) b.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
   const older = Object.values(t.by).filter((s) => s.older);
-  const reach = (m) => Math.max(...steps(m).filter((x) => !x.older).map((x) => x.lead));
+  const reachOf = (p) => Math.max(...steps(p).filter((x) => !x.older).map((x) => x.lead));
   $("hint").textContent = older.length
-    ? `Questa carta viene dalla corsa ${runLabel(older[0].run)} (+${older[0].h} h): la corsa più recente di ${S.m.models[older[0].model].short} arriva fino a +${reach(older[0].model)} h.`
+    ? `Questa carta viene dalla corsa ${runLabel(older[0].run)} (+${older[0].h} h): la corsa più recente di ${src(older[0].pane).short} arriva fino a +${reachOf(older[0].pane)} h.`
     : "Frecce ← → per cambiare scadenza, barra spaziatrice per l'animazione.";
-  writeHash(t);
-  // precarica le scadenze vicine
+  writeHash();
   const i = tl.indexOf(t);
   for (const k of [i + 1, i + 2, i - 1]) {
     const n = tl[k];
-    if (n) for (const s of Object.values(n.by)) if (s.charts.has(S.chart)) img(url(s));
+    if (n) for (const s of Object.values(n.by)) if (s.charts.has(keyOf(s.pane))) img(url(s));
   }
 }
-
 function step(dir) {
   const tl = timeline();
   const i = tl.findIndex((x) => x.valid === S.valid);
@@ -420,16 +551,17 @@ async function tick() {
   const tl = timeline();
   const i = tl.findIndex((x) => x.valid === S.valid);
   const n = tl[(i + 1) % tl.length];
-  await Promise.all(Object.values(n.by).filter((s) => s.charts.has(S.chart)).map((s) => loaded(img(url(s)))));
+  await Promise.all(Object.values(n.by).filter((s) => s.charts.has(keyOf(s.pane))).map((s) => loaded(img(url(s)))));
   if (!S.playing) return;
   S.valid = n.valid; show();
   S.timer = setTimeout(tick, +$("speed").value * (i + 1 === tl.length - 1 ? 2.5 : 1));
 }
 function play() {
+  if (S.view === "localita") return;
   S.playing = true;
   $("playIcon").innerHTML = '<path d="M3 2h4v12H3zM9 2h4v12H9z"/>';
   $("play").setAttribute("aria-label", "Ferma animazione");
-  for (const t of timeline()) for (const s of Object.values(t.by)) if (s.charts.has(S.chart)) img(url(s));
+  for (const t of timeline()) for (const s of Object.values(t.by)) if (s.charts.has(keyOf(s.pane))) img(url(s));
   tick();
 }
 function stop() {
@@ -438,16 +570,148 @@ function stop() {
   $("play").setAttribute("aria-label", "Avvia animazione");
 }
 
-// ---------- indirizzo condivisibile: #modello/area/carta/scadenza ----------
-function writeHash(t) {
-  const h = `#${S.model}/${S.region}/${S.chart}/${t.lead}`;
+// ---------- meteogrammi e pennacchi ----------
+let chartLib = null;
+function loadChartLib() {
+  if (!chartLib) chartLib = new Promise((res, rej) => {
+    const sc = el("script", { src: "vendor/chart.umd.js" });
+    sc.onload = () => res(window.Chart); sc.onerror = rej;
+    document.head.append(sc);
+  });
+  return chartLib;
+}
+const fTick = new Intl.DateTimeFormat("it-IT", { weekday: "short", day: "numeric", timeZone: "UTC" });
+function axisOpts(times) {
+  return {
+    ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 },
+      callback: (v, i) => { const d = new Date(times[i]); const h = d.getUTCHours();
+        return h === 0 ? fTick.format(d) : h === 12 && times.length < 50 ? "12Z" : ""; } },
+    grid: { color: (c) => (c.index != null && new Date(times[c.index]).getUTCHours() === 0 ? "#B7C3CC" : "rgba(0,0,0,0)") },
+  };
+}
+function mkChart(Chart, box, type, times, datasets, yTitle, extra = {}) {
+  const c = new Chart(box, {
+    type, data: { labels: times.map((t) => `${fTick.format(new Date(t))} ${hh(t)}Z`), datasets },
+    options: Object.assign({
+      locale: "it-IT", responsive: true, maintainAspectRatio: false, animation: false, spanGaps: true,
+      interaction: { mode: "index", intersect: false },
+      elements: { point: { radius: 0, hoverRadius: 3 }, line: { tension: 0.25 } },
+      plugins: {
+        legend: { labels: { boxWidth: 14, boxHeight: 3, font: { size: 12 }, filter: (it) => !it.text.startsWith("membro") } },
+        tooltip: { filter: (it) => !it.dataset.label.startsWith("membro") },
+      },
+      scales: { x: axisOpts(times), y: { title: { display: true, text: yTitle, font: { size: 11 } }, ticks: { font: { size: 11 } } } },
+    }, extra),
+  });
+  charts.push(c);
+  return c;
+}
+function card(title, note) {
+  const c = el("div", { class: "card" });
+  const h = el("h3", {}, title);
+  if (note) h.append(el("small", {}, note));
+  const box = el("div", { class: "box" });
+  const cv = el("canvas");
+  box.append(cv);
+  c.append(h, box);
+  $("locCharts").append(c);
+  return cv;
+}
+async function showLoc() {
+  const city = S.m.cities.find((c) => c.id === S.city) || S.m.cities[0];
+  S.city = city.id;
+  $("locName").textContent = city.name;
+  $("locInfo").textContent = "Caricamento…";
+  let Chart;
+  try { Chart = await loadChartLib(); } catch (e) {
+    $("locInfo").textContent = "Non riesco a caricare la libreria dei grafici: controlla la connessione e ricarica la pagina.";
+    return;
+  }
+  const ids = detIds();
+  const det = await Promise.all(ids.map((id) => getJSON(`data/punti/${id}.json?r=${runId(Date.parse(S.m.models[id].run))}`)));
+  const E = S.m.ensembles[S.plume];
+  const ens = E ? await getJSON(`data/ensemble/${S.plume}.json?r=${runId(Date.parse(E.run))}`) : null;
+  if (S.view !== "localita" || S.city !== city.id) return;
+  charts.forEach((c) => c.destroy()); charts = [];
+  $("locCharts").innerHTML = "";
+  const times = [...new Set(det.flatMap((d) => (d ? d.valid.map(Date.parse) : [])))].sort((a, b) => a - b);
+  const series = (d, v) => {
+    if (!d || !d.cities[city.id] || !d.cities[city.id][v]) return null;
+    const m = new Map(d.valid.map((t, i) => [Date.parse(t), d.cities[city.id][v][i]]));
+    return times.map((t) => (m.has(t) ? m.get(t) : null));
+  };
+  const lines = (v, dash) => ids.map((id, i) => {
+    const data = series(det[i], v);
+    return data && { label: S.m.models[id].short + (dash ? " raffiche" : ""), data, borderColor: COLORS[id] || "#555",
+      backgroundColor: COLORS[id] || "#555", borderWidth: dash ? 1.2 : 2, borderDash: dash ? [5, 4] : [] };
+  }).filter(Boolean);
+  $("locInfo").textContent = "Corse: " + ids.map((id) => `${S.m.models[id].short} ${runLabel(Date.parse(S.m.models[id].run))}`).join(", ") + ".";
+  const add = (title, note) => card(title, note);
+  $("locCharts").append(el("h3", { class: "section-title" }, "Modelli a confronto"));
+  mkChart(Chart, add("Temperatura a 2 metri"), "line", times, lines("t2m"), "°C");
+  mkChart(Chart, add("Temperatura a 850 hPa", "circa 1500 m"), "line", times, lines("t850"), "°C");
+  mkChart(Chart, add("Precipitazioni", "nelle 6 ore precedenti"), "bar", times,
+    lines("tp6").map((d) => Object.assign(d, { borderWidth: 0, barPercentage: 0.9, categoryPercentage: 0.85 })), "mm");
+  mkChart(Chart, add("Vento medio e raffiche", "raffiche tratteggiate"), "line", times, [...lines("wind10"), ...lines("gust", true)], "km/h");
+  mkChart(Chart, add("Pressione al livello del mare"), "line", times, lines("mslp"), "hPa");
+  mkChart(Chart, add("Nuvolosità totale"), "line", times, lines("tcc"), "%", {});
+  if (!ens) return;
+  const et = ens.valid.map(Date.parse);
+  const dIdx = ids.indexOf(ENS_DET[S.plume]);
+  const plume = (v, unit, title, note, kind = "line") => {
+    const mem = ens.cities[city.id] && ens.cities[city.id][v];
+    if (!mem) return;
+    const n = mem.length;
+    const mean = et.map((_, j) => {
+      const vals = mem.map((m) => m[j]).filter((x) => x != null);
+      return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+    });
+    const ds = mem.map((m, i) => ({ label: `membro ${i + 1}`, data: m, borderColor: "rgba(90,106,121,.32)", borderWidth: 1, type: "line" }));
+    ds.push({ label: "media", data: mean, borderColor: "#13283D", backgroundColor: "#13283D", borderWidth: 2.6, type: "line" });
+    if (dIdx >= 0 && det[dIdx]) {
+      const m = new Map(det[dIdx].valid.map((t, i) => [Date.parse(t), det[dIdx].cities[city.id]?.[v]?.[i]]));
+      ds.push({ label: `${S.m.models[ids[dIdx]].short} (deterministico)`, data: et.map((t) => m.get(t) ?? null),
+        borderColor: COLORS[ids[dIdx]], backgroundColor: COLORS[ids[dIdx]], borderWidth: 2, borderDash: [6, 3], type: "line" });
+    }
+    mkChart(Chart, add(title, note), kind, et, ds, unit);
+  };
+  $("locCharts").append(el("h3", { class: "section-title" }, `Pennacchio ${E.short}`,));
+  $("locCharts").lastChild.append(el("small", {}, `${ens.members} membri, corsa ${runLabel(Date.parse(E.run))}`));
+  plume("t850", "°C", "Temperatura a 850 hPa", "ogni linea grigia è un membro");
+  plume("tp6", "mm", "Precipitazioni", "nelle 6 ore precedenti, per membro");
+  plume("mslp", "hPa", "Pressione al livello del mare");
+  plume("z500", "dam", "Geopotenziale a 500 hPa");
+}
+
+// ---------- indirizzo condivisibile ----------
+function writeHash() {
+  let h;
+  const tl = S.view !== "localita" ? timeline().find((x) => x.valid === S.valid) : null;
+  const lead = tl ? tl.lead : 0;
+  if (S.view === "carte") h = `#carte/${S.model}/${S.region}/${S.chart}/${lead}`;
+  else if (S.view === "confronto") h = `#confronto/${S.a}/${S.b}/${S.region}/${S.chart}/${lead}`;
+  else if (S.view === "ensemble") h = `#ensemble/${S.ens}/${S.region}/${S.product}/${lead}`;
+  else h = `#localita/${S.city}/${S.plume}`;
   if (location.hash !== h) history.replaceState(null, "", h);
 }
 function readHash() {
-  const [model, region, chart, lead] = decodeURIComponent(location.hash.slice(1)).split("/");
-  if (["gfs", "ecmwf", "confronto"].includes(model)) S.model = model;
-  if (region && S.m.regions.some((r) => r.id === region)) S.region = region;
-  if (chart && S.m.charts.some((c) => c.id === chart)) S.chart = chart;
+  const parts = decodeURIComponent(location.hash.slice(1)).split("/").filter(Boolean);
+  if (!parts.length) return;
+  let lead;
+  if (S.m.models[parts[0]] || parts[0] === "gfs" || parts[0] === "ecmwf") {  // vecchi link: #gfs/italia/z500/48
+    S.view = "carte"; [S.model, S.region, S.chart, lead] = parts;
+  } else if (parts[0] === "confronto" && parts.length >= 5 && S.m.models[parts[1]]) {
+    S.view = "confronto"; [, S.a, S.b, S.region, S.chart, lead] = parts;
+  } else if (parts[0] === "confronto") {
+    S.view = "confronto"; [, S.region, S.chart, lead] = parts;
+  } else if (parts[0] === "carte") {
+    S.view = "carte"; [, S.model, S.region, S.chart, lead] = parts;
+  } else if (parts[0] === "ensemble") {
+    S.view = "ensemble"; [, S.ens, S.region, S.product, lead] = parts;
+  } else if (parts[0] === "localita") {
+    S.view = "localita"; S.city = parts[1] || S.city; S.plume = parts[2] || S.plume;
+  }
+  fixState();
   if (lead !== undefined && !isNaN(+lead)) S.valid = baseRun() + +lead * H;
 }
 
@@ -462,15 +726,16 @@ async function refresh() {
   try {
     const m = await fetchManifest();
     if (!S.m || m.generated === S.m.generated) { renderRuns(); return; }
-    const news = ["gfs", "ecmwf"].filter((id) => m.models[id] && (!S.m.models[id] || m.models[id].run !== S.m.models[id].run));
+    const all = (x) => ({ ...x.models, ...x.ensembles });
+    const news = Object.keys(all(m)).filter((id) => !all(S.m)[id] || all(m)[id].run !== all(S.m)[id].run);
     const lead = S.valid != null ? (S.valid - baseRun()) / H : null;
     S.m = m;
+    json.clear();
     if (lead != null) S.valid = baseRun() + lead * H;
     update(); renderRuns();
-    if (news.length) toast("Nuova corsa arrivata: " + news.map((id) => `${m.models[id].short} ${hh(Date.parse(m.models[id].run))}Z`).join(" e "));
+    if (news.length) toast("Nuova corsa arrivata: " + news.map((id) => `${all(m)[id].short} ${hh(Date.parse(all(m)[id].run))}Z`).join(", "));
   } catch (e) { /* riprova al prossimo giro */ }
 }
-
 async function start() {
   try {
     S.m = await fetchManifest();
@@ -480,23 +745,21 @@ async function start() {
       Ricarica la pagina più tardi.</p></div>`;
     return;
   }
-  if (!S.m.models.gfs && S.m.models.ecmwf) S.model = "ecmwf";
   readHash();
-  if (!S.m.models[S.model] && S.model !== "confronto") S.model = Object.keys(S.m.models)[0];
   update(); renderRuns();
   setInterval(refresh, 5 * 60 * 1000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 }
 
-$("models").addEventListener("click", (e) => {
+$("views").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
-  S.model = b.dataset.model; update();
+  S.view = b.dataset.view; update();
 });
 $("prev").onclick = () => { stop(); step(-1); };
 $("next").onclick = () => { stop(); step(1); };
 $("play").onclick = () => (S.playing ? stop() : play());
 document.addEventListener("keydown", (e) => {
-  if (e.target.closest("select,input,textarea") || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (S.view === "localita" || e.target.closest("select,input,textarea") || e.altKey || e.ctrlKey || e.metaKey) return;
   if (e.key === "ArrowRight") { e.preventDefault(); stop(); step(1); }
   else if (e.key === "ArrowLeft") { e.preventDefault(); stop(); step(-1); }
   else if (e.key === " " && !e.target.closest("button")) { e.preventDefault(); S.playing ? stop() : play(); }
