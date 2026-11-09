@@ -7,6 +7,7 @@
 import argparse
 import datetime as dt
 import json
+import multiprocessing
 import os
 import shutil
 import sys
@@ -113,7 +114,9 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
             except Exception:
                 traceback.print_exc()
 
-    with ProcessPoolExecutor(max_workers=workers) as pool:
+    # i processi si rinnovano ogni poche scadenze: la memoria resta sotto controllo per tutta la corsa
+    ctx = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=workers, mp_context=ctx, max_tasks_per_child=6) as pool:
         pending = set()
         for h in steps:
             try:

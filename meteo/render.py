@@ -15,6 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.patheffects as pe  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.colors import BoundaryNorm, ListedColormap  # noqa: E402
+from matplotlib.patches import Polygon, Rectangle  # noqa: E402
 import cartopy.crs as ccrs  # noqa: E402
 import shapely.wkb  # noqa: E402
 from PIL import Image  # noqa: E402
@@ -174,20 +175,42 @@ class Canvas:
         self.t_credit.set_text(model["credit"])
         self.t_unit.set_text(self.reg["label"])
 
-    def colorbar(self, mappable, chart):
-        # azzera l'asse: la barra precedente lo restringe per far posto ai triangoli alle estremità
-        self.cax.cla()
-        self.cax.set_axes_locator(None)
-        self.cax.set_position(C.CBAR_RECT)
-        lv = chart["levels"]
-        ticks = lv[:: -(-len(lv) // 17)]
-        cb = self.fig.colorbar(mappable, cax=self.cax, orientation="horizontal", ticks=ticks,
-                               spacing="uniform", extendfrac=0.025)
-        integer = all(float(t).is_integer() for t in ticks)
-        cb.ax.set_xticklabels([f"{t:.0f}" if integer else f"{t:g}" for t in ticks])
-        cb.ax.tick_params(labelsize=7.5, length=2, pad=1.5)
-        cb.outline.set_linewidth(0.5)
-        self.cax.set_title(chart["unit"], fontsize=7.5, loc="left", pad=1.5, color="#333333")
+    def colorbar(self, chart):
+        """Barra dei colori disegnata a mano: quella di matplotlib trattiene in memoria le carte precedenti."""
+        cax = self.cax
+        cax.cla()
+        lv, ext = chart["levels"], chart["extend"]
+        cmap, _ = cmap_norm(chart)
+        cols = list(cmap.colors)
+        nb = len(lv) - 1
+        lo = ext in ("both", "min")
+        hi = ext in ("both", "max")
+        tri = 0.55
+        for k in range(nb):
+            cax.add_patch(Rectangle((k, 0), 1, 1, facecolor=cols[k + lo], edgecolor="none"))
+        outline = [(0, 0)]
+        if lo:
+            cax.add_patch(Polygon([(0, 0), (-tri, 0.5), (0, 1)], facecolor=cols[0], edgecolor="none"))
+            outline = [(0, 0), (-tri, 0.5), (0, 1)]
+        else:
+            outline = [(0, 0), (0, 1)]
+        outline += [(nb, 1)] + ([(nb + tri, 0.5)] if hi else []) + [(nb, 0)]
+        if hi:
+            cax.add_patch(Polygon([(nb, 0), (nb + tri, 0.5), (nb, 1)], facecolor=cols[-1], edgecolor="none"))
+        cax.add_patch(Polygon(outline, closed=True, facecolor="none", edgecolor="#333333", linewidth=0.5))
+        cax.set_xlim(-tri - 0.05, nb + tri + 0.05)
+        cax.set_ylim(-0.02, 1.02)
+        step = -(-len(lv) // 17)
+        pos = list(range(0, len(lv), step))
+        integer = all(float(lv[i]).is_integer() for i in pos)
+        cax.set_xticks(pos)
+        cax.set_xticklabels([f"{lv[i]:.0f}" if integer else f"{lv[i]:g}" for i in pos])
+        cax.set_yticks([])
+        cax.tick_params(axis="x", labelsize=7.5, length=2, pad=1.5)
+        for sp in cax.spines.values():
+            sp.set_visible(False)
+        cax.patch.set_visible(False)
+        cax.set_title(chart["unit"], fontsize=7.5, loc="left", pad=1.5, color="#333333")
 
 
 class Fields(dict):
@@ -400,7 +423,7 @@ def render_step(job):
             try:
                 draw(cid, x, ch)
                 cv.header(job["model"], ch, run, valid, h, run)
-                cv.colorbar(x.mappable, ch)
+                cv.colorbar(ch)
                 save_png(cv.fig, os.path.join(job["out"], rid, cid, f"{h:03d}.png"))
                 produced.setdefault(cid, set()).add(rid)
             except Exception:
