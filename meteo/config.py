@@ -5,6 +5,7 @@ DPI = 100
 MAP_RECT = [0.008, 0.115, 0.984, 0.80]  # x, y, larghezza, altezza (frazione della figura)
 CBAR_RECT = [0.10, 0.058, 0.80, 0.022]
 GRID_NX = 460  # punti della griglia di disegno in orizzontale
+IMG_EXT = "webp"  # immagini WebP senza perdita: circa 13% più leggere dei PNG
 
 LAND = "#ece6d8"
 SEA = "#d6e2ea"
@@ -55,6 +56,10 @@ PAL = {
              "#7b1c8c", "#4b1c8c", "#2b2373"],
     "pwat": ["#f6e7c4", "#e3d6a0", "#bfe0a3", "#7ccaa6", "#46b1c6", "#2f86d1", "#3557b8",
              "#5c3fa6", "#8e2c97", "#c32a7a", "#e8558a"],
+    "zero": ["#5a1f8a", "#3c3fbd", "#2b6fd6", "#3aa0e8", "#62c9d8", "#5ec29a", "#9ad37a", "#d8e45e",
+             "#ffe34d", "#ffbe45", "#fb8a3a", "#ec5530", "#c92a2a", "#901818"],
+    "snow": ["#e6f2ff", "#c7defa", "#9fc4f2", "#759fe0", "#5579cc", "#5a59b8", "#7246a6", "#8e3497", "#a82788",
+             "#c22277", "#d9336a"],
     "cloud": ["#f4f6f8", "#dfe4ea", "#c6cdd6", "#aab4c0", "#8f9aa8", "#747f8e", "#5b6574",
               "#444d5a"],
 }
@@ -122,13 +127,22 @@ CHARTS = [
          title="Vento a 250 hPa – corrente a getto (km/h) e geopotenziale 250 hPa (dam)",
          needs=["u250", "v250", "z250"], unit="km/h", pal="jet",
          levels=[100, 125, 150, 175, 200, 225, 250, 275, 300, 350], extend="max"),
+    dict(id="zero", group="Neve e zero termico", label="Quota zero termico",
+         title="Quota dello zero termico (m sul livello del mare)",
+         needs=["fzl"], unit="m", pal="zero", regions=["italia", "europa_ovest", "europa"],
+         levels=[0, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2250, 2500, 3000, 3500, 4000, 4500],
+         extend="max"),
+    dict(id="neve", group="Neve e zero termico", label="Neve al suolo",
+         title="Altezza della neve al suolo (cm) e isoterma 0 °C a 850 hPa (tratteggio)",
+         needs=["snow"], unit="cm", pal="snow", regions=["italia", "europa_ovest", "europa"],
+         levels=[1, 2, 5, 10, 15, 20, 30, 50, 75, 100, 150, 200], extend="max"),
     dict(id="cape", group="Vento e instabilità", label="Instabilità (CAPE)",
          title="Energia potenziale convettiva – CAPE (J/kg) e pressione al suolo (hPa)",
          needs=["cape", "mslp"], unit="J/kg", pal="cape",
          levels=[100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000], extend="max"),
 ]
 CHART_BY_ID = {c["id"]: c for c in CHARTS}
-GROUPS = ["Pressione", "Temperature", "Precipitazioni e nubi", "Vento e instabilità"]
+GROUPS = ["Pressione", "Temperature", "Precipitazioni e nubi", "Neve e zero termico", "Vento e instabilità"]
 
 # --------------------------------------------------------------------------------------
 # Località dei meteogrammi e dei pennacchi dell'ensemble

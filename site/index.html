@@ -285,7 +285,7 @@ function timeline() {
              has: list.some((s) => s.charts.has(keyOf(s.pane))) };
   });
 }
-const url = (s) => `maps/${s.id}/${S.region}/${keyOf(s.pane)}/${pad3(s.h)}.png?r=${runId(s.run)}`;
+const url = (s) => `maps/${s.id}/${S.region}/${keyOf(s.pane)}/${pad3(s.h)}.${src(s.pane).ext || "png"}?r=${runId(s.run)}`;
 
 function img(u) {
   let im = cache.get(u);
@@ -340,6 +340,7 @@ function modelSelect(label, value, onchange) {
   return wrap;
 }
 function chartAvailable(c) { return panes().some((p) => (src(p)?.charts || []).includes(c)); }
+const chartInRegion = (c, r) => { const ch = S.m.charts.find((x) => x.id === c); return !ch || !ch.regions || ch.regions.includes(r); };
 
 function renderSide() {
   const side = $("side");
@@ -371,9 +372,10 @@ function renderSide() {
   const r = section("Area");
   r.id = "regions";
   for (const reg of S.m.regions) {
-    const allowed = ok.includes(reg.id);
-    r.append(opt(reg.label, reg.id === S.region, () => { S.region = reg.id; update(); }, !allowed,
-      allowed ? null : "Non disponibile per questo modello"));
+    const forModel = ok.includes(reg.id);
+    const forChart = S.view === "ensemble" || chartInRegion(S.chart, reg.id);
+    r.append(opt(reg.label, reg.id === S.region, () => { S.region = reg.id; update(); }, !(forModel && forChart),
+      !forModel ? "Non disponibile per questo modello" : !forChart ? "Questa carta non c'è per quest'area" : null));
   }
   side.append(r);
   if (S.view === "ensemble") {
@@ -389,8 +391,10 @@ function renderSide() {
     c.append(el("h3", {}, g));
     const og = el("optgroup", { label: g });
     for (const ch of S.m.charts.filter((x) => x.group === g)) {
-      const av = chartAvailable(ch.id);
-      c.append(opt(ch.label, ch.id === S.chart, () => { S.chart = ch.id; update(); }, !av, av ? ch.title : "Non disponibile per questo modello"));
+      const inReg = chartInRegion(ch.id, S.region);
+      const av = chartAvailable(ch.id) && inReg;
+      c.append(opt(ch.label, ch.id === S.chart, () => { S.chart = ch.id; update(); }, !av,
+        av ? ch.title : !inReg ? "Disponibile solo per Italia ed Europa" : "Non disponibile per questo modello"));
       const o = el("option", { value: ch.id }, ch.label);
       o.selected = ch.id === S.chart; o.disabled = !av;
       og.append(o);
@@ -466,7 +470,8 @@ function fixState() {
   if (["carte", "confronto", "ensemble"].includes(S.view)) {
     const ok = okRegions();
     if (!ok.includes(S.region)) S.region = ok[0] || allRegions()[0];
-    if (S.view !== "ensemble" && !chartAvailable(S.chart)) S.chart = S.m.charts.find((c) => chartAvailable(c.id))?.id || S.chart;
+    if (S.view !== "ensemble" && !(chartAvailable(S.chart) && chartInRegion(S.chart, S.region)))
+      S.chart = S.m.charts.find((c) => chartAvailable(c.id) && chartInRegion(c.id, S.region))?.id || S.chart;
     if (S.view === "ensemble" && !(S.m.ens_products || []).some((p) => p.id === S.product)) S.product = (S.m.ens_products || [{}])[0].id;
   }
 }
@@ -655,6 +660,9 @@ async function showLoc() {
   mkChart(Chart, add("Vento medio e raffiche", "raffiche tratteggiate"), "line", times, [...lines("wind10"), ...lines("gust", true)], "km/h");
   mkChart(Chart, add("Pressione al livello del mare"), "line", times, lines("mslp"), "hPa");
   mkChart(Chart, add("Nuvolosità totale"), "line", times, lines("tcc"), "%", {});
+  mkChart(Chart, add("Quota dello zero termico", "metri sul livello del mare"), "line", times, lines("fzl"), "m");
+  mkChart(Chart, add("Neve al suolo"), "line", times, lines("snow"), "cm",
+    { scales: { x: axisOpts(times), y: { min: 0, suggestedMax: 5, title: { display: true, text: "cm", font: { size: 11 } } } } });
   if (!ens) return;
   const et = ens.valid.map(Date.parse);
   const dIdx = ids.indexOf(ENS_DET[S.plume]);

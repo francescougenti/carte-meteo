@@ -48,6 +48,8 @@ def det_values(arrays, f):
     put("mslp", g("mslp"))
     put("tp6", g("tp6"))
     put("tcc", g("tcc"), 0)
+    put("fzl", g("fzl"), 0)
+    put("snow", g("snow"), 0)
     if g("u10") is not None and g("v10") is not None:
         put("wind10", np.hypot(g("u10"), g("v10")) * 3.6, 0)
     if g("gust") is not None:
@@ -60,7 +62,7 @@ def write_det(public, model, run_iso, rows):
     rows = sorted(rows, key=lambda r: r[0])
     data = {"model": model.id, "run": run_iso, "h": [r[0] for r in rows], "valid": [r[1] for r in rows],
             "cities": {}}
-    names = ("t2m", "t850", "z500", "mslp", "tp6", "tcc", "wind10", "gust")
+    names = ("t2m", "t850", "z500", "mslp", "tp6", "tcc", "wind10", "gust", "fzl", "snow")
     for c in C.CITIES:
         data["cities"][c["id"]] = {n: [r[2].get(c["id"], {}).get(n) for r in rows] for n in names}
     for c in data["cities"].values():

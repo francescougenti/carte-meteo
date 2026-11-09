@@ -397,6 +397,14 @@ def draw(cid, x, ch):
         x.fill(np.hypot(d["u250"], d["v250"]) * 3.6, ch)
         x.lines(d["z250"], np.arange(880, 1140, 12 if cv_big(x) else 8), color="#1b1b1b", lw=0.55, halo=HALO_W)
         x.arrows(d["u250"], d["v250"], min_kmh=90)
+    elif cid == "zero":
+        x.fill(d["fzl"], ch)
+        x.lines(d["fzl"], [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000], color="#1b1b1b", lw=0.45,
+                halo=HALO_W, fmt="%d")
+    elif cid == "neve":
+        x.fill(d["snow"], ch)
+        if "t850" in x.d.raw:
+            x.lines(d["t850"], [0], color="#0b3d91", lw=0.9, ls="dashed", label=False)
     elif cid == "cape":
         x.fill(d["cape"], ch)
         x.isobars(color="#2b2b2b", lw=0.45, halo=HALO_W)
@@ -405,13 +413,17 @@ def draw(cid, x, ch):
 
 
 def save_png(fig, path):
+    """Salva la figura: 96 colori (nessuna differenza visibile), poi WebP senza perdita o PNG."""
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=C.DPI, facecolor="white")
     buf.seek(0)
     im = Image.open(buf).convert("RGB").quantize(colors=96, method=Image.Quantize.FASTOCTREE,
                                                  dither=Image.Dither.NONE)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    im.save(path, optimize=True)
+    if path.endswith(".webp"):
+        im.convert("RGB").save(path, "WEBP", lossless=True, method=4, quality=80)
+    else:
+        im.save(path, optimize=True)
 
 
 _CANVAS = {}
@@ -437,6 +449,8 @@ def render_step(job):
             ch = C.CHART_BY_ID[cid]
             if h == 0 and not ch.get("step0", True):
                 continue
+            if ch.get("regions") and rid not in ch["regions"]:
+                continue
             if any(n not in raw or not np.isfinite(raw[n]).any() for n in ch["needs"]):
                 continue
             x = Ctx(cv, fields)
@@ -444,14 +458,17 @@ def render_step(job):
                 draw(cid, x, ch)
                 cv.header(job["model"], ch, run, valid, h, run)
                 cv.colorbar(ch)
-                save_png(cv.fig, os.path.join(job["out"], rid, cid, f"{h:03d}.png"))
+                save_png(cv.fig, os.path.join(job["out"], rid, cid, f"{h:03d}.{C.IMG_EXT}"))
                 produced.setdefault(cid, set()).add(rid)
             except Exception:
                 print(f"  ! errore nel disegno {job['model']['id']} {rid} {cid} +{h}h", flush=True)
                 traceback.print_exc()
             finally:
                 x.clear()
-    full = sorted(c for c, rs in produced.items() if len(rs) == len(job["regions"]))
+    def wanted(cid):
+        allowed = C.CHART_BY_ID[cid].get("regions")
+        return {r for r in job["regions"] if not allowed or r in allowed}
+    full = sorted(c for c, rs in produced.items() if rs >= wanted(c))
     return h, full
 
 
@@ -498,7 +515,7 @@ def render_ens_step(job):
                     x.lines(mean, np.arange(460, 610, 4), color="#111111", lw=0.7, halo=HALO_W)
                     cv.colorbar(pr)
                 cv.header(job["model"], pr, run, valid, h, run)
-                save_png(cv.fig, os.path.join(job["out"], rid, pid, f"{h:03d}.png"))
+                save_png(cv.fig, os.path.join(job["out"], rid, pid, f"{h:03d}.{C.IMG_EXT}"))
                 produced.add((rid, pid))
             except Exception:
                 print(f"  ! errore nel disegno {job['model']['id']} {rid} {pid} +{h}h", flush=True)

@@ -123,4 +123,4 @@ def finalize(model, run, public, stage, results, manifest):
     manifest.setdefault("ensembles", {})[model.id] = dict(
         label=model.long_label, short=model.label, credit=model.credit, run=run.iso,
         members=len(model.members), updated=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        steps=steps, products=[p["id"] for p in C.ENS_PRODUCTS], regions=C.ENS_REGIONS)
+        steps=steps, products=[p["id"] for p in C.ENS_PRODUCTS], regions=C.ENS_REGIONS, ext=C.IMG_EXT)
