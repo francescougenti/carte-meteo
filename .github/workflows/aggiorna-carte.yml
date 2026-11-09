@@ -76,10 +76,8 @@ jobs:
     if: needs.controlla.outputs.aggiorna == 'true' && (needs.controlla.outputs.sito != '' || github.event_name != 'schedule')
     runs-on: ubuntu-latest
     timeout-minutes: 240
-    environment:
-      # ambiente dedicato: "github-pages" era stato creato con una regola che bloccava il ramo main
-      name: sito-carte-meteo
-      url: ${{ steps.deploy.outputs.page_url }}
+    outputs:
+      pronto: ${{ steps.pronto.outputs.ok }}
     steps:
       - uses: actions/checkout@v7
 
@@ -123,10 +121,10 @@ jobs:
         with:
           path: public
 
-      - name: Pubblica su GitHub Pages
-        id: deploy
+      - name: Pronto da pubblicare
+        id: pronto
         if: steps.sito.outputs.ok == 'true' && needs.controlla.outputs.sito != ''
-        uses: actions/deploy-pages@v5
+        run: echo "ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Elimina le copie vecchie della cache
         if: steps.build.outputs.updated == 'true'
@@ -147,3 +145,17 @@ jobs:
         run: |
           echo "::error::Carte non generate per: ${{ steps.build.outputs.errors }} (le altre sono state pubblicate)"
           exit 1
+
+  pubblica:
+    # job separato per la pubblicazione: se GitHub ha un problema qui, le carte sono comunque generate e salvate
+    needs: genera
+    if: needs.genera.outputs.pronto == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: sito-carte-meteo
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Pubblica su GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v5
