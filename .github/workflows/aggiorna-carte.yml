@@ -54,8 +54,9 @@ jobs:
         run: |
           ARGS=""
           if [ -n "$URL" ]; then ARGS="--manifest-url ${URL%/}/data/manifest.json"; fi
-          # una modifica al codice o un avvio a mano pubblicano comunque il sito
-          if [ "${{ github.event_name }}" != "schedule" ]; then ARGS="$ARGS --force"; fi
+          # una modifica al codice ripubblica sempre il sito; gli avvii esterni (cron-job.org) e quelli
+          # programmati lavorano solo se c'è una corsa nuova, salvo "Rigenera tutte le carte"
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.forza }}" = "true" ]; then ARGS="$ARGS --force"; fi
           python3 -m meteo.check $ARGS
 
       - name: Mantieni attivo il controllo automatico
