@@ -117,14 +117,27 @@ jobs:
           key: carte-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Prepara la pubblicazione
+        id: up1
         if: steps.sito.outputs.ok == 'true' && needs.controlla.outputs.sito != ''
+        continue-on-error: true   # a volte il servizio di GitHub risponde con un errore temporaneo
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: public
+
+      - name: Attendi prima di riprovare
+        if: steps.up1.outcome == 'failure'
+        run: sleep 90
+
+      - name: Prepara la pubblicazione (secondo tentativo)
+        id: up2
+        if: steps.up1.outcome == 'failure'
         uses: actions/upload-pages-artifact@v5
         with:
           path: public
 
       - name: Pronto da pubblicare
         id: pronto
-        if: steps.sito.outputs.ok == 'true' && needs.controlla.outputs.sito != ''
+        if: steps.up1.outcome == 'success' || steps.up2.outcome == 'success'
         run: echo "ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Elimina le copie vecchie della cache
