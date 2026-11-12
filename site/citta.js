@@ -493,7 +493,9 @@ function cityPage(data) {
   const note = changeNote(data, today);
   const runs = data.corse || {};
   const up = Date.parse(data.aggiornato);
-  const where = [data.provincia && data.provincia !== data.nome ? `provincia di ${data.provincia}` : null, data.regione,
+  const first = (x) => String(x || "").split("/")[0];
+  const prov = first(data.provincia), reg = first(data.regione);
+  const where = [prov && prov !== first(data.nome) && prov !== reg ? `provincia di ${prov}` : null, reg,
     data.alt != null ? `${num(data.alt)} m` : null].filter(Boolean).join(", ");
   const nota = store("nota");
   if (nota) store("nota", null);

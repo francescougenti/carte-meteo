@@ -1,6 +1,30 @@
-# Carte meteo GFS, ECMWF, AIFS, ICON-EU ed ensemble
+# Ventaglio: il meteo della tua città e quanto è sicuro
 
-Sito di carte meteo in stile Meteociel che si aggiorna da solo a ogni nuova corsa (00, 06, 12, 18 UTC).
+Sito meteo che si aggiorna da solo a ogni nuova corsa dei modelli, con due anime:
+
+- **La tua città** (pagina iniziale), per tutti: la previsione dei capoluoghi di provincia per 10 giorni,
+  con quanto è sicura, quando conviene ricontrollarla e cosa è cambiato dall'ultima visita.
+- **Per appassionati**: carte in stile Meteociel, confronto tra modelli, ensemble e meteogrammi.
+
+## La tua città
+
+Per ogni capoluogo (più Ostuni) e per ogni giorno:
+
+- minima, massima, pioggia, nuvole, vento con il nome italiano (Scirocco, Maestrale…), quota neve e quattro fasce della giornata.
+  Sono una media pesata di ECMWF IFS, AIFS, GFS e ICON-EU, con la temperatura corretta per l'altitudine della città;
+- **gli 81 futuri**: la probabilità di pioggia è il numero di membri degli ensemble (50 ECMWF + 31 GEFS) in cui piove almeno 1 mm;
+  le fasce colorate del grafico "I prossimi 10 giorni" mostrano dove cadono massime e minime in 8 futuri su 10;
+- **deciso, quasi deciso, ancora aperto** (il piccolo ventaglio più o meno aperto) e **quando lo saprai**: il giorno in cui
+  conviene ricontrollare, stimato da come si restringono i futuri con l'avvicinarsi della data;
+- **cosa è cambiato**: dall'ultima visita (ricordata solo nel browser) o rispetto a ieri, e come è cambiata la previsione
+  per ogni giorno negli ultimi giorni (lo storico è conservato nei dati del sito);
+- quattro modelli a confronto e un collegamento alle carte di quel giorno.
+
+I file dei dati sono descritti in [docs/formato-dati.md](docs/formato-dati.md). Il sito raccoglie da subito anche le
+previsioni dei modelli e le temperature osservate negli aeroporti (METAR), per confrontare nei prossimi mesi
+i modelli fisici con quello a intelligenza artificiale, città per città.
+
+## Per appassionati
 
 | Modello | Fonte | Fino a | Aree |
 |---|---|---|---|
@@ -14,8 +38,8 @@ Sito di carte meteo in stile Meteociel che si aggiorna da solo a ogni nuova cors
 - **Aree:** Italia, Europa occidentale, Europa, Emisfero Nord, Nord America
 - **Carte (17):** geopotenziale 500 hPa e pressione, pressione e spessore 500/1000, temperatura a 850 hPa, 500 hPa e 2 m, theta-e 850 hPa, precipitazioni in 6 ore e cumulate, acqua precipitabile, nuvolosità, umidità a 700 hPa, quota dello zero termico e neve al suolo (solo Italia ed Europa), vento a 10 m, raffiche, corrente a getto a 250 hPa, CAPE. Lo zero termico di ECMWF e AIFS è calcolato dalle temperature sui livelli di pressione; GFS e ICON-EU lo forniscono già pronto. Se un modello non fornisce un campo (per esempio AIFS non dà raffiche e CAPE), quella carta manca solo per lui.
 - **Ensemble:** spaghetti delle isoipse 552 e 576 dam a 500 hPa, media e dispersione del geopotenziale.
-- **Località:** meteogrammi con tutti i modelli a confronto (temperatura a 2 m e 850 hPa, pioggia, vento e raffiche, pressione, nuvolosità) e pennacchi dell'ensemble (temperatura a 850 hPa, pioggia, pressione, geopotenziale) per 12 città.
-- **Sito:** sezioni Carte, Confronto (due modelli qualsiasi affiancati), Ensemble e Località; scadenze a passi di 6 ore, animazione, link condivisibili, aggiornamento automatico della pagina.
+- **Località:** meteogrammi con tutti i modelli a confronto (temperatura a 2 m e 850 hPa, pioggia, vento e raffiche, pressione, nuvolosità, zero termico, neve) e pennacchi dell'ensemble (temperatura a 2 m e a 850 hPa, pioggia, pressione, geopotenziale) per 12 città.
+- **Sito:** sezioni Carte, Confronto (due modelli qualsiasi affiancati), Ensemble e Località; scadenze a passi di 6 ore, animazione, link condivisibili, aggiornamento automatico della pagina, tema chiaro e scuro.
 
 ## Come funziona
 
@@ -25,7 +49,7 @@ Tutto gira gratis su GitHub, senza server.
 2. Se c'è una corsa nuova, lo script scarica solo i campi che servono dai file GRIB2 ufficiali, usando gli indici per prendere i singoli pezzi:
    - GFS: bucket NOAA su AWS (`noaa-gfs-bdp-pds`), con NOMADS come riserva
    - ECMWF: `data.ecmwf.int`, con il mirror AWS come riserva
-3. Disegna le carte (circa 2.500 per GFS e 3.000 per ECMWF) e pubblica il sito su GitHub Pages. Su GitHub ci vogliono circa 10–15 minuti per modello.
+3. Disegna le carte (circa 2.500 per GFS e 3.000 per ECMWF), legge i valori dei modelli su tutte le città, ricalcola la previsione "La tua città" e pubblica il sito su GitHub Pages. Su GitHub ci vogliono circa 10–15 minuti per modello.
 
 Le corse ECMWF delle 06 e 18 UTC arrivano solo a +144 h. In quel caso le scadenze da +150 a +240 h restano quelle della corsa precedente (00 o 12 UTC), segnate nella linea del tempo con una sottolineatura a puntini.
 
@@ -45,7 +69,9 @@ Tutto è in `meteo/config.py`:
 
 - `REGIONS`: aree, proiezione, riquadro, distanza tra le isobare (`isobar`, in hPa)
 - `CHARTS`: carte, titoli, scale di colore e soglie (`levels`)
-- `CITIES`: le località dei meteogrammi (nome, latitudine, longitudine)
+- `CITIES`: le località dei meteogrammi (nome, latitudine, longitudine); hanno anche la previsione "La tua città"
+- In `meteo/citta.py`: pesi dei modelli (`WEIGHTS`), soglie di pioggia e di "deciso" (`RAIN_DAY`, `T_RANGE_OK`, `P_OK`)
+- L'elenco dei comuni è in `assets/luoghi/comuni.json` (si rigenera con `tools/prepara_luoghi.py` e `tools/altitudini.py`)
 - `ENS_PRODUCTS`, `SPAGHETTI_LEVELS`: i prodotti dell'ensemble e le isoipse degli spaghetti
 - In `meteo/sources.py` e `meteo/ensemble_sources.py`: `max_step` stabilisce fin dove arriva ogni modello, `regions` su quali aree si disegna
 
@@ -61,7 +87,9 @@ python -m meteo.build --public public --models gfs --steps 0,6,12 --regions ital
 cp -r site/. public/ && python -m http.server -d public 8000
 ```
 
-Per provare senza internet, `tests/fake_data.py` crea dati GRIB2 sintetici con la stessa struttura dei server reali e `tests/range_server.py` li serve in locale. Si usano con le variabili `METEO_GFS_ROOT`, `METEO_ECMWF_ROOT` e `METEO_NOW`.
+Per provare senza internet, `tests/fake_data.py` crea dati GRIB2 sintetici con la stessa struttura dei server reali e `tests/range_server.py` li serve in locale. Si usano con le variabili `METEO_GFS_ROOT`, `METEO_ECMWF_ROOT`, `METEO_AIFS_ROOT`, `METEO_ICON_ROOT`, `METEO_GEFS_ROOT`, `METEO_ENS_ROOT`, `METEO_METAR_URL` e `METEO_NOW`.
+
+Per provare solo "La tua città", `tests/fake_campioni.py /tmp/pub` simula tre giorni di corse di tutti i modelli su tutte le città (con lo storico); poi `cp -r site/. /tmp/pub/ && python -m http.server -d /tmp/pub 8000`.
 
 ## Limiti
 
@@ -71,6 +99,9 @@ Per provare senza internet, `tests/fake_data.py` crea dati GRIB2 sintetici con l
 - I controlli programmati si sospendono dopo 60 giorni senza commit. Il workflow lo evita facendo un commit vuoto ogni 40 giorni.
 
 ## Fonti e licenze
+
+- Elenco dei comuni: database dei comuni italiani di Garda Informatica, dati ISTAT, licenza MIT. Altitudini: AWS Terrain Tiles.
+- Osservazioni (verifica): bollettini METAR, NOAA Aviation Weather Center.
 
 - GFS: NOAA/NCEP, dati di pubblico dominio.
 - GEFS: NOAA/NCEP, dati di pubblico dominio.

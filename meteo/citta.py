@@ -155,9 +155,12 @@ def det_day(src, place, day, now):
     g = lambda v, h: src.get(v, pid, at(day, h))  # noqa: E731
     t = {h: g("t2m", h) for h in (0, 6, 12, 18, 24)}
     t = {h: (v + c if v is not None else None) for h, v in t.items()}
-    hi = [t[12], t[18], *(v + c for v in (g("tmax6", 12), g("tmax6", 18)) if v is not None)]
-    lo = [t[0], t[6], *(v + c for v in [g("tmin6", 6)] if v is not None)]
-    hi, lo = [v for v in hi if v is not None], [v for v in lo if v is not None]
+    mx12, mx18, mn6 = g("tmax6", 12), g("tmax6", 18), g("tmin6", 6)
+    hi = [t[12], t[18], *(v + c for v in (mx12, mx18) if v is not None)]
+    lo = [t[0], t[6], *(v + c for v in [mn6] if v is not None)]
+    # massima e minima solo se il modello copre le ore in cui di solito cadono (corse partite a giornata in corso)
+    hi = [v for v in hi if v is not None] if (t[12] is not None or mx18 is not None) else []
+    lo = [v for v in lo if v is not None] if (t[6] is not None or mn6 is not None) else []
     periods = [g("tp6", h) for h in (6, 12, 18, 24)]
     need = [k for k, h in enumerate((6, 12, 18, 24)) if at(day, h) > now]
     if not hi and not lo and all(periods[k] is None for k in need):
@@ -317,6 +320,8 @@ def place_day(place, day, sources, now):
     out["pioggia"] = rain
     nubi, cape, fzl = blend(det, "nubi"), blend(det, "cape"), blend(det, "fzl")
     suolo = blend(det, "suolo")
+    if suolo and tmax is not None and tmax > 6:
+        suolo = 0.0  # la neve al suolo del modello viene dalle quote più alte della cella, non dalla città
     kind = snow_kind(fzl, place.get("alt"), tmax) if (mm or 0) >= RAIN_DAY else None
     out["nubi"] = rnd(nubi, 0)
     out["codice"] = sky_code(nubi, mm, p, cape, kind)
