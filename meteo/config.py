@@ -6,7 +6,7 @@ MAP_RECT = [0.008, 0.115, 0.984, 0.80]  # x, y, larghezza, altezza (frazione del
 CBAR_RECT = [0.10, 0.058, 0.80, 0.022]
 GRID_NX = 460  # punti della griglia di disegno in orizzontale
 IMG_EXT = "webp"  # immagini WebP senza perdita: circa 13% più leggere dei PNG
-SCHEMA = 2  # da aumentare quando cambiano carte o formato: forza il ridisegno di tutti i modelli
+SCHEMA = 3  # da aumentare quando cambiano carte o formato: forza il ridisegno di tutti i modelli (3: campioni per città)
 
 LAND = "#ece6d8"
 SEA = "#d6e2ea"
