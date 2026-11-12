@@ -14,7 +14,12 @@ const LABEL = {
 const STATE = { deciso: "Deciso", quasi: "Quasi deciso", aperto: "Ancora aperto" };
 const FASCE = ["Notte", "Mattina", "Pomeriggio", "Sera"];
 
-const C = { index: null, data: null, day: 0, root: null, go: null, loading: null };
+const C = { index: null, comuni: null, data: null, day: 0, root: null, go: null, loading: null };
+const ARTICLE = { Tramontana: "la", Grecale: "il", Levante: "il", Scirocco: "lo", Ostro: "l'", Libeccio: "il", Ponente: "il", Maestrale: "il" };
+const CARD = ["nord", "nord-est", "est", "sud-est", "sud", "sud-ovest", "ovest", "nord-ovest"];
+const ORIGIN = ["dal Nord Europa", "dai Balcani", "dall'Europa dell'Est", "dal Mediterraneo orientale", "dall'Africa",
+  "dal Nord Africa e dalla Spagna", "dall'Atlantico", "dal Nord Atlantico"];
+const RAINY = ["pioggia", "pioggia-forte", "neve", "pioggia-neve"];
 
 // ---------- piccoli aiuti ----------
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -129,8 +134,9 @@ function windText(v) {
 function daySentence(d) {
   const parts = [LABEL[d.codice] || "–"];
   const r = d.pioggia || {};
-  if (r.futuri != null && r.p > 15 && r.p < 85 && ["rovesci", "pioggia", "pioggia-forte", "temporale", "neve", "pioggia-neve"].includes(d.codice))
-    parts[0] += ` (piove in ${r.futuri} futuri su ${r.su})`;
+  const k = r.scenari ?? r.futuri;
+  if (k != null && r.p > 15 && r.p < 85 && ["rovesci", "pioggia", "pioggia-forte", "temporale", "neve", "pioggia-neve"].includes(d.codice))
+    parts[0] += ` (piove in ${k} scenari su ${r.su})`;
   const w = windText(d.vento);
   if (w) parts.push(w);
   const n = d.neve;
@@ -145,21 +151,22 @@ function checkWhen(iso, today) {
   return `${fWeek.format(dateObj(iso))} sera`;
 }
 function rainFact(r) {
-  const k = r.futuri, n = r.su;
+  const k = r.scenari ?? r.futuri, n = r.su;
   if (k == null) return "";
-  if (k === n) return `piove in tutti gli ${n} futuri`;
-  if (k === 0) return `asciutto in tutti gli ${n} futuri`;
-  return r.p >= 50 ? `piove in ${k} futuri su ${n}` : `asciutto in ${n - k} futuri su ${n}`;
+  if (k === n) return `piove in tutti gli ${n} scenari`;
+  if (k === 0) return `asciutto in tutti gli ${n} scenari`;
+  return r.p >= 50 ? `piove in ${k} scenari su ${n}` : `asciutto in ${n - k} scenari su ${n}`;
 }
 function certaintyText(d, today) {
   const u = d.incertezza || {}, r = d.pioggia || {};
   const range = d.max_f ? `${deg(d.max_f[0])} e ${deg(d.max_f[1])}` : "";
   if (u.stato === "deciso") {
     const facts = [rainFact(r), range ? `massima tra ${range}` : ""].filter(Boolean);
-    return `I futuri sono d'accordo: ${facts.join(", ")}.`;
+    return `Gli scenari sono d'accordo: ${facts.join(", ")}.`;
   }
-  let t = u.motivo === "pioggia" && r.futuri != null
-    ? `I futuri si dividono sulla pioggia: piove in ${r.futuri} su ${r.su}.`
+  const k = r.scenari ?? r.futuri;
+  let t = u.motivo === "pioggia" && k != null
+    ? `Gli scenari si dividono sulla pioggia: piove in ${k} su ${r.su}.`
     : d.max_f ? `La massima può andare da ${deg(d.max_f[0])} a ${deg(d.max_f[1])}.` : "";
   if (u.fino_all_ultimo) t += ` Potrebbe restare incerto fino all'ultimo: ricontrolla ${checkWhen(u.ricontrolla, today)} e la mattina stessa.`;
   else if (u.ricontrolla) {
@@ -170,7 +177,7 @@ function certaintyText(d, today) {
 }
 
 // ---------- cosa è cambiato ----------
-function changes(prev, cur, today) {
+function changes(prev, cur, today, noSnow) {
   const out = [];
   const byDate = new Map(prev.map((d) => [d.data, d]));
   for (const d of cur) {
@@ -191,7 +198,7 @@ function changes(prev, cur, today) {
         out.push({ w: Math.abs(dv) / 1.5, t: `<b>${cap(name)}</b>: ${lab} di ${Math.abs(dv)}° ${dv > 0 ? "più alta" : "più bassa"} (${deg(d[key])}, prima ${deg(o[key])}).` });
     }
     const snowNow = ["neve", "pioggia-neve"].includes(d.codice), snowThen = ["neve", "pioggia-neve"].includes(o.codice);
-    if (snowNow !== snowThen) out.push({ w: 4, t: `<b>${cap(name)}</b>: ${snowNow ? "ora è prevista neve" : "la neve non è più prevista"}.` });
+    if (snowNow !== snowThen && !noSnow) out.push({ w: 4, t: `<b>${cap(name)}</b>: ${snowNow ? "ora è prevista neve" : "la neve non è più prevista"}.` });
   }
   return out.sort((a, b) => b.w - a.w).slice(0, 4).map((x) => x.t);
 }
@@ -221,7 +228,8 @@ function changeNote(data, today) {
     if (best) { prev.push({ data: day, min: best.s[1], max: best.s[2], p: best.s[3], codice: best.s[5] }); when = when || best.t; }
   }
   if (!prev.length) return null;
-  return { title: "Rispetto a ieri", items: changes(prev, data.giorni, today), first: true };
+  // per i comuni delle zone lo storico ha l'icona della quota della zona: la neve non si confronta
+  return { title: "Rispetto a ieri", items: changes(prev, data.giorni, today, !!data.zona), first: true };
 }
 
 // ---------- disegno ----------
@@ -267,7 +275,7 @@ function fanChart(data, today) {
   }).join("");
   return `<section class="ventaglio" aria-labelledby="vTitle">
     <div class="sec-head"><h2 id="vTitle">I prossimi ${g.length} giorni</h2>
-      <p>Le fasce colorate mostrano dove cadono massime e minime in 8 futuri su 10: più si allargano, meno è sicuro.</p></div>
+      <p>Le fasce colorate mostrano dove cadono massime e minime in 8 scenari su 10: più si allargano, meno è sicuro.</p></div>
     <div class="v-scroll"><div class="v-grid" style="--n:${g.length}">${cols}<svg class="v-svg" aria-hidden="true"></svg></div></div>
   </section>`;
 }
@@ -303,9 +311,59 @@ function drawBands(root, data) {
   svg.innerHTML = band("max") + band("min") + line("max") + line("min") + dots("max") + dots("min");
 }
 
-function futures(d) {
+function chartFor(id, iso) {
+  const M = window.VENTAGLIO_MANIFEST;
+  if (!M) return null;
+  for (const mid of ["ecmwf", "gfs", "icon-eu", "aifs"]) {
+    const m = M.models && M.models[mid];
+    if (!m || !(m.regions || []).includes("italia")) continue;
+    const st = (m.steps || []).find((x) => x.valid === iso && (x.charts || []).includes(id));
+    if (!st) continue;
+    const run = new Date(st.run).toISOString().slice(0, 13).replace(/[-T]/g, "");
+    const lead = Math.round((Date.parse(iso) - Date.parse(m.run)) / 36e5);
+    const label = ((M.charts || []).find((c) => c.id === id) || {}).label || id;
+    return { url: `maps/${mid}/italia/${id}/${String(st.h).padStart(3, "0")}.${m.ext || "png"}?r=${run}`,
+      hash: `#carte/${mid}/italia/${id}/${lead}`, label, model: m.short || mid };
+  }
+  return null;
+}
+function whyText(r, d, prevName) {
+  const dir = r.dir == null ? null : Math.round(((r.dir % 360) + 360) % 360 / 45) % 8;
+  const from = dir == null ? "" : ` da ${CARD[dir]}, ${ORIGIN[dir]}`;
+  const w = d.vento || {};
+  const fascia = { 6: "di notte", 12: "al mattino", 18: "nel pomeriggio", 0: "la sera" }[new Date(r.ora).getUTCHours()] || "";
+  switch (r.tipo) {
+    case "freddo": return `Arriva aria più fredda${from}: a 1.500 metri di quota la temperatura scende di ${r.delta} gradi rispetto a ${prevName}.`;
+    case "caldo": return `Arriva aria più calda${from}: a 1.500 metri di quota la temperatura sale di ${r.delta} gradi rispetto a ${prevName}.`;
+    case "neve": return `Lo zero termico scende intorno ai ${num(r.zero)} m: la neve può arrivare fino a circa ${num(Math.max(r.zero - 300, 0))} m.`;
+    case "temporali": return `L'aria è instabile e carica di energia: possibili temporali${r.cape >= 1500 ? ", anche forti" : ""}.`;
+    case "vento": {
+      const art = ARTICLE[w.nome] || "il";
+      return `Soffia ${art}${art.endsWith("'") ? "" : " "}${w.nome || "vento"}${w.raffiche ? `, con raffiche fino a ${num(Math.round(w.raffiche / 5) * 5)} km/h` : ""}.`;
+    }
+    case "bassa": return `Una zona di bassa pressione (${r.hpa} hPa) passa vicino e porta nuvole e piogge.`;
+    case "alta": return `L'alta pressione (${r.hpa} hPa) tiene lontane le perturbazioni.`;
+    case "pioggia": return `Passa una perturbazione: piove soprattutto ${fascia}.`;
+    default: return "";
+  }
+}
+function whyBlock(d, prevName) {
+  const list = (d.perche || []).filter((r) => r.tipo !== "neve" || ["neve", "pioggia-neve"].includes(d.codice));
+  if (!list.length) return "";
+  const r = list[0];
+  const text = whyText(r, d, prevName);
+  if (!text) return "";
+  const ch = chartFor(r.carta, r.ora);
+  const at = `${dayName(romeDate(Date.parse(r.ora)))} alle ${fClock.format(new Date(r.ora))}`;
+  const fig = ch ? `<figure class="why-map"><a href="${ch.hash}" aria-label="Apri la carta tra quelle per appassionati">
+      <img src="${ch.url}" loading="lazy" alt="Carta: ${esc(ch.label)}, ${esc(at)} (${esc(ch.model)})"></a>
+      <figcaption>${esc(ch.label)}${r.carta === "prec6" ? " fino a" : ","} ${esc(at)}, modello ${esc(ch.model)}. <a href="${ch.hash}">Apri la carta</a></figcaption></figure>` : "";
+  return `<h3>Perché</h3><p>${esc(text)}</p>${fig}`;
+}
+
+function scenarios(d) {
   const r = d.pioggia || {};
-  if (!r.membri) return `<p class="muted">Per questo giorno non ci sono i futuri dell'ensemble: la probabilità viene dal confronto tra i modelli.</p>`;
+  if (!r.membri) return `<p class="muted">Per questo giorno non ci sono gli scenari dell'ensemble: la probabilità viene dal confronto tra i modelli.</p>`;
   const all = [];
   for (const [sid, list] of Object.entries(r.membri)) for (const mm of list) if (mm != null) all.push({ sid, mm });
   all.sort((a, b) => a.mm - b.mm);
@@ -315,8 +373,9 @@ function futures(d) {
     return `${k} su ${list.length} del ${W[sid] || sid}`;
   });
   const dots = all.map((m) => `<i class="${cls(m.mm)}" title="${m.mm.toFixed(1).replace(".", ",")} mm (${W[m.sid] || m.sid})"></i>`).join("");
-  return `<p>Piove almeno 1 mm in <b>${r.futuri} futuri su ${r.su}</b>: ${per.join(" e ")}.</p>
-    <div class="dots" role="img" aria-label="${r.futuri} futuri con pioggia su ${r.su}">${dots}</div>
+  const k = r.scenari ?? r.futuri;
+  return `<p>Piove almeno 1 mm in <b>${k} scenari su ${r.su}</b>: ${per.join(" e ")}.</p>
+    <div class="dots" role="img" aria-label="${k} scenari con pioggia su ${r.su}">${dots}</div>
     <p class="legend"><span><i class="f0"></i>asciutto</span><span><i class="f1"></i>1–5 mm</span><span><i class="f2"></i>5–15 mm</span><span><i class="f3"></i>oltre 15 mm</span></p>`;
 }
 
@@ -349,7 +408,7 @@ function historyBlock(data, d) {
 }
 
 function modelsBlock(d) {
-  const rows = Object.entries(d.modelli || {}).map(([sid, m]) => `<tr><th scope="row">${MODELS[sid] || sid}</th>
+  const rows = Object.entries(d.modelli || {}).map(([sid, m]) => `<tr${m.escluso ? ' class="out"' : ""}><th scope="row">${MODELS[sid] || sid}${m.escluso ? ' <small title="Molto diverso dagli altri modelli: non entra nella media">escluso dalla media</small>' : ""}</th>
     <td class="n t-min">${deg(m.min)}</td><td class="n t-max">${deg(m.max)}</td><td class="n">${m.mm == null ? "–" : m.mm.toFixed(1).replace(".", ",") + " mm"}</td></tr>`).join("");
   return `<table class="models-t"><thead><tr><th scope="col">Modello</th><th scope="col" class="n">Min</th><th scope="col" class="n">Max</th><th scope="col" class="n">Pioggia</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -382,21 +441,22 @@ function detail(data, today) {
         ${fasce ? `<ul class="fasce" aria-label="Fasce della giornata">${fasce}</ul>` : ""}
         <h3>${fan(st, 22)} Quando lo saprai</h3>
         <p><b>${STATE[st]}.</b> ${esc(certaintyText(d, today))}</p>
-        <h3>Gli ${d.pioggia?.su || 81} futuri</h3>
-        ${futures(d)}
+        <h3>Gli ${d.pioggia?.su || 81} scenari</h3>
+        ${scenarios(d)}
       </div>
       <div class="d-col">
+        ${whyBlock(d, C.day > 0 ? dayName(data.giorni[C.day - 1].data, today) : "ieri")}
         <h3>Come è cambiata la previsione</h3>
         ${historyBlock(data, d)}
         <h3>Cosa dicono i modelli</h3>
         ${modelsBlock(d)}
-        ${chartsLink(d)}
+        ${(d.perche || []).length ? "" : chartsLink(d)}
       </div>
     </div>
   </section>`;
 }
 
-function search(placeholder = "Cerca la tua città") {
+function search(placeholder = "Cerca il tuo comune") {
   return `<div class="search" role="search">
     <div class="combo">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
@@ -414,7 +474,10 @@ function wireSearch(root) {
   const q = root.querySelector("#q"), list = root.querySelector("#qList");
   if (!q) return;
   let items = [], act = -1;
-  const places = C.index.luoghi.map((p) => ({ p, n: norm(p.nome), a: norm(p.altro), pr: norm(p.provincia), s: norm(p.sigla) }));
+  const prep = (arr) => arr.map((p) => ({ p, n: norm(p.nome), a: norm(p.altro), pr: norm(p.provincia), s: norm(p.sigla) }));
+  let places = prep(C.index.luoghi);
+  const more = () => loadComuni().then((all) => { places = prep(all); if (q.value) render(); }).catch(() => {});
+  q.addEventListener("focus", more, { once: true });
   const pick = (p) => { list.hidden = true; q.setAttribute("aria-expanded", "false"); C.go(p.id); };
   const render = () => {
     const v = norm(q.value);
@@ -427,7 +490,7 @@ function wireSearch(root) {
     act = items.length ? 0 : -1;
     list.innerHTML = items.length
       ? items.map((p, i) => `<li role="option" id="opt${i}" aria-selected="${i === act}" data-i="${i}">${esc(p.nome)} <span>${esc(p.sigla)}, ${esc(p.regione)}</span></li>`).join("")
-      : `<li class="none">Nessun capoluogo con questo nome. Per ora ci sono i capoluoghi di provincia: prova con il tuo.</li>`;
+      : `<li class="none">Nessun comune con questo nome. Controlla come l'hai scritto.</li>`;
     list.hidden = false;
     q.setAttribute("aria-expanded", "true");
     q.setAttribute("aria-activedescendant", act >= 0 ? "opt0" : "");
@@ -452,12 +515,14 @@ function locate(root) {
   const msg = root.querySelector("#locMsg");
   if (!navigator.geolocation) { msg.textContent = "Questo browser non permette di leggere la posizione: cerca la città per nome."; return; }
   msg.textContent = "Cerco la tua posizione…";
-  navigator.geolocation.getCurrentPosition((pos) => {
+  navigator.geolocation.getCurrentPosition(async (pos) => {
     const me = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+    let list = C.index.luoghi;
+    try { list = await loadComuni(); } catch (e) { /* si ripiega sui capoluoghi */ }
     let best = null;
-    for (const p of C.index.luoghi) { const d = km(me, p); if (!best || d < best.d) best = { p, d }; }
+    for (const p of list) { const d = km(me, p); if (!best || d < best.d) best = { p, d }; }
     if (!best) return;
-    if (best.d > 30) store("nota", `Il capoluogo più vicino a te è ${best.p.nome}, a ${Math.round(best.d)} km. Presto arriveranno tutti i comuni.`);
+    if (best.d > 25) store("nota", `Sembri fuori dall'Italia: il comune più vicino che conosciamo è ${best.p.nome}, a ${Math.round(best.d)} km.`);
     C.go(best.p.id);
   }, (err) => {
     msg.textContent = err.code === 1
@@ -478,12 +543,12 @@ function homePage() {
     .map((p) => `<a href="#citta/${p.id}">${esc(p.nome.split("/")[0])}</a>`).join(" ")}</p></div>`).join("");
   return `<section class="home">
     <h1 class="brand-big">Ventaglio</h1>
-    <p class="lede">Il meteo della tua città, con una cosa in più: quanto è sicura la previsione e quando conviene ricontrollarla.</p>
-    ${search()}
-    <p class="explain">Per ogni giorno mettiamo a confronto quattro modelli e 81 simulazioni diverse dell'atmosfera, i <i>futuri</i>.
+    <p class="lede">Il meteo del tuo comune, con una cosa in più: quanto è sicura la previsione e quando conviene ricontrollarla.</p>
+    ${search("Cerca il tuo comune")}
+    <p class="explain">Per ogni giorno mettiamo a confronto quattro modelli e 81 simulazioni diverse dell'atmosfera, gli <i>scenari</i>.
       Se vanno d'accordo la previsione è decisa; se si dividono te lo diciamo, insieme al momento in cui di solito si chiarisce.
       Ventaglio ricorda anche cosa diceva l'ultima volta che sei passato. <a href="#come-funziona">Come funziona</a></p>
-    <h2 class="regs-title">Le città disponibili</h2>
+    <h2 class="regs-title">I capoluoghi</h2>
     <div class="regs">${lists}</div>
   </section>`;
 }
@@ -499,12 +564,13 @@ function cityPage(data) {
     data.alt != null ? `${num(data.alt)} m` : null].filter(Boolean).join(", ");
   const nota = store("nota");
   if (nota) store("nota", null);
+  const zone = data.zona ? `<p class="zone">La previsione è calcolata per la zona intorno (${data.zona.comuni} comuni) e adattata alla quota di ${esc(data.nome.split("/")[0])}.</p>` : "";
   return `<section class="city">
     <header class="c-head">
       <div><h1>${esc(data.nome.split("/")[0])}</h1>
         <p class="where">${esc(where)}. Aggiornato ${esc(whenText(up))}
-          con ${Object.keys(runs).filter((k) => MODELS[k]).length} modelli e ${data.membri} futuri. <a href="#come-funziona">Come funziona</a></p></div>
-      ${search("Cerca un'altra città")}
+          con ${Object.keys(runs).filter((k) => MODELS[k]).length} modelli e ${data.membri} scenari. <a href="#come-funziona">Come funziona</a></p>${zone}</div>
+      ${search("Cerca un altro comune")}
     </header>
     ${nota ? `<p class="note">${esc(nota)}</p>` : ""}
     ${hero(data, today)}
@@ -522,15 +588,15 @@ function infoPage() {
     <p>Ogni volta che i centri meteo pubblicano una nuova corsa, il sito scarica i dati e rifà i conti da solo. Usiamo quattro modelli:
       ECMWF IFS (il centro europeo), ECMWF AIFS (il suo modello a intelligenza artificiale), GFS (NOAA, Stati Uniti) e ICON-EU (servizio meteo tedesco, solo i primi 5 giorni).
       Massime, minime e quantità di pioggia sono una media pesata dei quattro, con la temperatura corretta per l'altitudine della città.</p>
-    <h2>I futuri</h2>
+    <h2>Gli scenari</h2>
     <p>Oltre ai modelli "singoli", ECMWF e NOAA fanno girare lo stesso modello molte volte partendo da condizioni leggermente diverse: 50 volte il modello europeo, 31 l'americano.
-      Ognuna di queste simulazioni è un futuro possibile. La probabilità di pioggia è semplicemente il numero di futuri in cui piove almeno 1 mm nella giornata, su 81.
-      Le fasce colorate del grafico mostrano dove cadono massime e minime in 8 futuri su 10.</p>
+      Ognuna di queste simulazioni è uno scenario possibile. La probabilità di pioggia è semplicemente il numero di scenari in cui piove almeno 1 mm nella giornata, su 81.
+      Le fasce colorate del grafico mostrano dove cadono massime e minime in 8 scenari su 10.</p>
     <h2>Deciso, quasi deciso, ancora aperto</h2>
-    <p>Un giorno è <b>deciso</b> quando i futuri vanno d'accordo: piove in meno di 2 su 10 o in più di 8 su 10, e la massima sta in una forbice di 4 gradi.
+    <p>Un giorno è <b>deciso</b> quando gli scenari vanno d'accordo: piove in meno di 2 su 10 o in più di 8 su 10, e la massima sta in una forbice di 4 gradi.
       Quando si dividono, il giorno è <b>quasi deciso</b> o <b>ancora aperto</b>. Il ventaglio accanto a ogni giorno è più chiuso o più aperto di conseguenza.</p>
     <h2>Quando lo saprai</h2>
-    <p>Misuriamo, sulle previsioni di oggi per tutte le città, quanto si restringono di solito i futuri man mano che un giorno si avvicina.
+    <p>Misuriamo, sulle previsioni di oggi per tutte le città, quanto si restringono di solito gli scenari man mano che un giorno si avvicina.
       Da qui stimiamo il giorno in cui la previsione per la tua data dovrebbe diventare decisa e ti suggeriamo di ricontrollare quella sera, quando arrivano le corse del pomeriggio.
       È una stima: a volte una situazione resta incerta fino all'ultimo, e in quel caso te lo diciamo.</p>
     <h2>Cosa è cambiato</h2>
@@ -538,11 +604,59 @@ function infoPage() {
       Ricorda anche cosa avevi visto all'ultima visita: questa informazione resta solo nel tuo browser, non viene inviata a nessuno, e lo stesso vale per la posizione se usi "Vicino a me".</p>
     <h2>I limiti</h2>
     <p>I modelli hanno maglie di 7–25 km e dati ogni 6 ore: valli strette, coste e temporali locali possono andare diversamente. Le temperature del giorno sono stimate dai valori ogni 6 ore e dai massimi e minimi dei modelli quando ci sono.
-      Per ora ci sono i capoluoghi di provincia; i comuni arriveranno in seguito. Per chi vuole vedere tutto c'è la parte <a href="#carte">per appassionati</a> con le carte, i confronti e gli ensemble.</p>
+      Per chi vuole vedere tutto c'è la parte <a href="#carte">per appassionati</a> con le carte, i confronti e gli ensemble.</p>
+    <h2>Tutti i comuni</h2>
+    <p>I capoluoghi di provincia hanno una previsione calcolata esattamente nel loro punto. Gli altri comuni sono raggruppati in zone di circa 25 km, la maglia dei modelli globali:
+      la previsione si calcola una volta per zona e il sito la adatta alla quota del tuo comune, con temperature più basse di circa 6,5 gradi ogni 1.000 metri
+      e la neve al posto della pioggia quando il comune è sopra la quota neve.</p>
+    <h2>Il perché, con la carta</h2>
+    <p>Per ogni giorno Ventaglio cerca la causa principale del tempo che farà: aria più fredda o più calda in arrivo (e da dove), una bassa pressione, l'alta pressione,
+      aria instabile, vento forte, lo zero termico basso. Te la spiega in una frase e ti mostra la carta dei modelli che la fa vedere, la stessa che guardano gli appassionati.</p>
     <h2>Fonti e licenze</h2>
     <p>ECMWF Open Data (IFS, AIFS, ENS), licenza CC BY 4.0. NOAA/NCEP (GFS, GEFS), pubblico dominio. Deutscher Wetterdienst (ICON-EU). Elenco dei comuni: dati ISTAT tramite Garda Informatica (licenza MIT).
       Quote dal modello digitale del terreno AWS Terrain Tiles. Previsioni e grafici sono un'elaborazione di questo sito, non prodotti ufficiali degli enti.</p>
   </article>`;
+}
+
+// ---------- tutti i comuni ----------
+async function loadComuni() {
+  if (C.comuni) return C.comuni;
+  const raw = await getJSON(`data/citta/comuni.json?u=${encodeURIComponent((C.index && C.index.aggiornato) || "")}`);
+  const F = Object.fromEntries(raw.campi.map((k, i) => [k, i]));
+  C.comuni = raw.comuni.map((r) => {
+    const [provincia, regione] = raw.province[r[F.sigla]] || ["", ""];
+    return { id: r[F.id], nome: r[F.nome], altro: r[F.altro] || null, sigla: r[F.sigla], provincia, regione,
+      lat: r[F.lat], lon: r[F.lon], alt: r[F.alt], file: r[F.file] };
+  });
+  C.comuniById = new Map(C.comuni.map((c) => [c.id, c]));
+  return C.comuni;
+}
+/** Adatta la previsione di una zona alla quota del comune (temperature) e ricalcola pioggia o neve. */
+function adapt(zone, c) {
+  const d = JSON.parse(JSON.stringify(zone));
+  const dz = zone.alt != null && c.alt != null ? 0.0065 * (zone.alt - c.alt) : 0;
+  const sh = (v) => (v == null ? v : Math.round((v + dz) * 10) / 10);
+  const snowCode = (code, tmax, n, mm) => {
+    if (!RAINY.includes(code) || !n || c.alt == null) return code;
+    const rain = (mm ?? 0) >= 15 ? "pioggia-forte" : "pioggia";
+    if (tmax != null && tmax >= 6) return code === "neve" || code === "pioggia-neve" ? rain : code;
+    if (n.quota <= c.alt + 50) return "neve";
+    if (n.quota <= c.alt + 350) return "pioggia-neve";
+    return code === "neve" || code === "pioggia-neve" ? rain : code;
+  };
+  for (const g of d.giorni) {
+    g.min = sh(g.min); g.max = sh(g.max);
+    if (g.min_f) g.min_f = g.min_f.map(sh);
+    if (g.max_f) g.max_f = g.max_f.map(sh);
+    for (const m of Object.values(g.modelli || {})) { m.min = sh(m.min); m.max = sh(m.max); }
+    g.codice = snowCode(g.codice, g.max, g.neve, g.pioggia?.mm);
+    (g.fasce || []).forEach((f) => { if (f) { f.t = f.t == null ? f.t : Math.round(f.t + dz); f.codice = snowCode(f.codice, f.t, g.neve, (f.mm ?? 0) * 4); } });
+    if (g.neve && g.max != null && g.max > 6) g.neve.suolo = 0;
+  }
+  for (const snaps of Object.values(d.storia || {})) for (const s of snaps) { s[1] = sh(s[1]); s[2] = sh(s[2]); }
+  Object.assign(d, { id: c.id, nome: c.nome, altro: c.altro, sigla: c.sigla, provincia: c.provincia, regione: c.regione,
+    lat: c.lat, lon: c.lon, alt: c.alt, zona: { id: zone.id, comuni: zone.comuni, alt: zone.alt } });
+  return d;
 }
 
 // ---------- interfaccia pubblica ----------
@@ -574,12 +688,20 @@ window.Citta = {
   },
   async open(id, keepDay) {
     try { await loadIndex(); } catch (e) { C.root.innerHTML = notReady(); return false; }
-    const p = C.index.luoghi.find((x) => x.id === id);
-    if (!p) return false;
+    let p = C.index.luoghi.find((x) => x.id === id), comune = null;
+    if (!p) {
+      try { await loadComuni(); } catch (e) { C.root.innerHTML = notReady(); return true; }
+      comune = C.comuniById.get(id);
+      if (!comune) return false;
+      p = comune;
+    }
     const token = (C.loading = id + Date.now());
     let data;
-    try { data = await getJSON(`data/citta/${id}.json?u=${encodeURIComponent(C.index.aggiornato)}`); }
-    catch (e) { C.root.innerHTML = `<section class="home"><p class="note">Non riesco a caricare la previsione di ${esc(p.nome)}. Controlla la connessione e ricarica la pagina.</p></section>`; return true; }
+    const file = comune ? comune.file : `citta/${id}`;
+    try {
+      data = await getJSON(`data/${file}.json?u=${encodeURIComponent(C.index.aggiornato)}`);
+      if (comune && file.startsWith("celle/")) data = adapt(data, comune);
+    } catch (e) { C.root.innerHTML = `<section class="home"><p class="note">Non riesco a caricare la previsione di ${esc(p.nome)}. Controlla la connessione e ricarica la pagina.</p></section>`; return true; }
     if (C.loading !== token) return true;
     if (!keepDay || !C.data || C.data.id !== id) C.day = 0;
     C.data = data;

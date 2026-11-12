@@ -58,7 +58,7 @@ def truth(p, t, shift=0.0, amp=1.0, second=0.5, tbias=0.0):
     u = -2.0 * pre + 6.0 * post   # da sud-est prima, da nord-ovest dopo
     v = 6.0 * pre - 5.0 * post
     fzl = max(0.0, 2400 - 1500 * front(h, lon, lat, 78 + shift, width=26) + 30 * tbias * 10)
-    return dict(t2m=t2m, tp6=tp6, tcc=tcc, u10=u, v10=v, gust=math.hypot(u, v) * 1.7 + 3,
+    return dict(t2m=t2m, tp6=tp6, tcc=tcc, u10=u, v10=v, u850=1.6 * u + 3, v850=1.6 * v, gust=math.hypot(u, v) * 1.7 + 3,
                 cape=400 * wet if lat < 41.5 else 80 * wet, fzl=fzl, t850=t2m - 8, mslp=1015 - 12 * wet,
                 snow=max(0.0, (alt - fzl + 300) / 40) * min(1, wet * 3) if alt > fzl - 300 else 0.0)
 
@@ -117,9 +117,10 @@ def write_run(run, places):
 
 
 def main():
-    places = luoghi.active()
+    places = luoghi.sample_points()
     for p in places:
-        p["alt"] = fake_alt(p)
+        if p["alt"] is None:
+            p["alt"] = fake_alt(p)
     run = T0
     while run <= LAST:
         print("corsa simulata", run.strftime("%d/%m %HZ"))

@@ -76,7 +76,8 @@ def write_det(public, model, run_iso, rows):
 # --------------------------------------------------------------------------------------
 # Campioni per la previsione "La tua città": tutti i luoghi attivi, file compatti .npz
 # --------------------------------------------------------------------------------------
-PLACE_VARS = ("t2m", "tmax6", "tmin6", "tp6", "tcc", "u10", "v10", "gust", "fzl", "snow", "t850", "cape", "mslp")
+PLACE_VARS = ("t2m", "tmax6", "tmin6", "tp6", "tcc", "u10", "v10", "u850", "v850", "gust", "fzl", "snow", "t850", "cape",
+              "mslp")
 
 
 def place_values(arrays, f):
@@ -89,10 +90,11 @@ def write_samples(public, model_id, run_iso, ids, hs, valids, series, orog=None)
     path = os.path.join(public, "data", "campioni", f"{model_id}.npz")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     extra = {} if orog is None else {"orog": np.asarray(orog, np.float32)}
+    # gli ensemble (luoghi × membri × scadenze) in mezza precisione: bastano e occupano la metà
+    arr = {f"v_{k}": np.asarray(v, np.float16 if np.ndim(v) == 3 else np.float32) for k, v in series.items()}
     with open(path + ".tmp", "wb") as fh:
         np.savez_compressed(fh, run=np.array(run_iso), ids=np.array(ids), h=np.array(hs, np.int32),
-                            valid=np.array(valids), **{f"v_{k}": np.asarray(v, np.float32) for k, v in series.items()},
-                            **extra)
+                            valid=np.array(valids), **arr, **extra)
     os.replace(path + ".tmp", path)
 
 

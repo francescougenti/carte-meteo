@@ -2,8 +2,10 @@
 
 Legge i campioni sui luoghi salvati da ogni modello (data/campioni/*.npz) e scrive:
 
-    data/citta/indice.json      elenco dei luoghi con oggi e domani in breve (ricerca e anteprime)
-    data/citta/<id>.json        previsione completa di un luogo, con lo storico delle previsioni passate
+    data/citta/indice.json      elenco dei capoluoghi con oggi e domani in breve (ricerca e anteprime)
+    data/citta/<id>.json        previsione completa di un capoluogo, con lo storico delle previsioni passate
+    data/celle/<id>.json        la stessa previsione per una zona di comuni (il sito la adatta alla quota del comune)
+    data/citta/comuni.json      tutti i comuni con la loro zona, per la ricerca e la posizione
 
 Formato documentato in docs/formato-dati.md.
 """
@@ -61,7 +63,7 @@ class Source:
             self.run = parse(z["run"])
             self.ids = [str(x) for x in z["ids"]]
             self.valid = [parse(v) for v in z["valid"]]
-            self.vars = {k[2:]: z[k] for k in z.files if k.startswith("v_")}
+            self.vars = {k[2:]: z[k].astype(np.float32) for k in z.files if k.startswith("v_")}
             self.orog = z["orog"] if "orog" in z.files else None
         self.row = {pid: i for i, pid in enumerate(self.ids)}
         self.col = {t: j for j, t in enumerate(self.valid)}
@@ -175,20 +177,29 @@ def det_day(src, place, day, now):
         mm = sum(max(periods[k], 0.0) for k in need)
     u = [g("u10", h) for h in (0, 6, 12, 18)]
     v = [g("v10", h) for h in (0, 6, 12, 18)]
-    winds = [(math.hypot(a, b) * 3.6, a, b) for a, b in zip(u, v) if a is not None and b is not None]
+    winds = [(math.hypot(a, b) * 3.6, a, b, h) for a, b, h in zip(u, v, (0, 6, 12, 18)) if a is not None and b is not None]
     gusts = [x * 3.6 for x in (g("gust", h) for h in (6, 12, 18, 24)) if x is not None]
     day_h = (6, 12, 18) if day.month in (4, 5, 6, 7, 8, 9) else (6, 12)
     clouds = [x for x in (g("tcc", h) for h in day_h) if x is not None]
     capes = [x for x in (g("cape", h) for h in (12, 18)) if x is not None]
     fzl = [x for x in (g("fzl", h) for h in (0, 6, 12, 18, 24)) if x is not None]
     snow = g("snow", 12)
+    t850 = [x for x in (g("t850", h) for h in (0, 6, 12, 18)) if x is not None and -60 < x < 45]
+    u8 = [x for x in (g("u850", h) for h in (6, 12, 18)) if x is not None]
+    v8 = [x for x in (g("v850", h) for h in (6, 12, 18)) if x is not None]
+    pres = [(x, h) for h, x in ((h, g("mslp", h)) for h in (0, 6, 12, 18)) if x is not None and 900 < x < 1080]
     out = dict(max=max(hi) if hi else None, min=min(lo) if lo else None, mm=mm,
+               t850=float(np.mean(t850)) if len(t850) >= 3 else None,
+               u850=float(np.mean(u8)) if u8 and len(u8) == len(v8) else None,
+               v850=float(np.mean(v8)) if v8 and len(u8) == len(v8) else None,
+               p_min=min(pres)[0] if pres else None, p_mean=float(np.mean([x for x, _ in pres])) if pres else None,
+               h_pmin=min(pres)[1] if pres else None,
                nubi=float(np.mean(clouds)) if clouds else None, cape=max(capes) if capes else None,
                fzl=min(fzl) if fzl else None, suolo=snow,
                raffiche=max(gusts) if gusts else None, periodi=periods, t=t)
     if winds:
         w = max(winds)
-        out.update(vento=w[0], u=w[1], v=w[2])
+        out.update(vento=w[0], u=w[1], v=w[2], h_vento=w[3])
     # fasce della giornata (ore UTC, circa un'ora prima dell'ora italiana)
     fasce = []
     for k, (h0, h1) in enumerate(((0, 6), (6, 12), (12, 18), (18, 24))):
@@ -253,6 +264,14 @@ def blend(per_model, key, tol=None):
         vals = {sid: v for sid, v in vals.items() if abs(v - med) <= tol}
     den = sum(WEIGHTS[sid] for sid in vals)
     return sum(WEIGHTS[sid] * v for sid, v in vals.items()) / den if den else None
+
+
+def outliers(per_model, key, tol):
+    vals = {sid: d.get(key) for sid, d in per_model.items() if d.get(key) is not None}
+    if len(vals) < 3:
+        return set()
+    med = float(np.median(list(vals.values())))
+    return {sid for sid, v in vals.items() if abs(v - med) > tol}
 
 
 def wind_name(u, v):
@@ -326,18 +345,18 @@ def place_day(place, day, sources, now):
         else:
             vals = [d[key] for d in det.values() if d.get(key) is not None]
             out[key + "_f"] = [rnd(min(vals) - 1), rnd(max(vals) + 1)]
-    # pioggia: probabilità dai futuri dell'ensemble, quantità dai modelli
+    # pioggia: probabilità dagli scenari dell'ensemble, quantità dai modelli
     members = {sid: e["mm"] for sid, e in ens.items() if "mm" in e}
     if members:
         allm = np.concatenate(list(members.values()))
         k, n = int((allm >= RAIN_DAY).sum()), int(len(allm))
-        rain = dict(p=rnd(100.0 * k / n, 0), futuri=k, su=n, forte=int((allm >= 10).sum()),
+        rain = dict(p=rnd(100.0 * k / n, 0), scenari=k, su=n, forte=int((allm >= 10).sum()),
                     membri={sid: [rnd(x) for x in m] for sid, m in members.items()})
         p = k / n
     else:
         vals = [d["mm"] for d in det.values() if d.get("mm") is not None]
         p = (sum(v >= RAIN_DAY for v in vals) / len(vals)) if vals else None
-        rain = dict(p=rnd(100 * p, 0) if p is not None else None, futuri=None, su=None)
+        rain = dict(p=rnd(100 * p, 0) if p is not None else None, scenari=None, su=None)
     rain["mm"] = rnd(mm)
     out["pioggia"] = rain
     nubi, cape, fzl = blend(det, "nubi"), blend(det, "cape"), blend(det, "fzl")
@@ -374,13 +393,67 @@ def place_day(place, day, sources, now):
         code = sky_code(nb, (m or 0) * 4, pk, cape if k in (2, 3) else None, kk)
         fasce.append(dict(t=rnd(t, 0), mm=rnd(m), p=rnd(100 * pk, 0) if pk is not None else None, codice=code))
     out["fasce"] = fasce
+    u8, v8 = blend(det, "u850"), blend(det, "v850")
+    hours = (6, 12, 18, 24)
+    wet = [(f["mm"] or 0, h) for f, h in zip(fasce, hours) if f is not None]
+    gust_h = max((d["vento"], d["h_vento"]) for d in det.values() if "vento" in d)[1] if wv else 12
+    pm = [(d["p_min"], d["h_pmin"]) for d in det.values() if d.get("p_min") is not None]
+    out["_aria"] = dict(t850=blend(det, "t850", tol=6), dir850=wind_name(u8, v8)[0] if u8 is not None and v8 is not None
+                        else None, v850=math.hypot(u8, v8) * 3.6 if u8 is not None and v8 is not None else None,
+                        p_min=blend(det, "p_min", tol=8), p_mean=blend(det, "p_mean", tol=8),
+                        h_pmin=min(pm)[1] if pm else 12, h_rain=max(wet)[1] if wet else 12, h_vento=gust_h,
+                        cape=cape, fzl=fzl, p=p, mm=mm)
     out["modelli"] = {sid: dict(max=rnd(d["max"]), min=rnd(d["min"]), mm=rnd(d["mm"])) for sid, d in det.items()}
-    # incertezza: la forbice della massima e quanto si dividono i futuri sulla pioggia
+    for sid in outliers(det, "max", 8) | outliers(det, "min", 8):
+        out["modelli"][sid]["escluso"] = True  # molto diverso dagli altri: non entra nella media
+    # incertezza: la forbice della massima e quanto si dividono gli scenari sulla pioggia
     u_t = (out["max_f"][1] - out["max_f"][0]) / T_RANGE_OK if out.get("max_f") else 0.0
     u_r = (min(p, 1 - p) / P_OK) if p is not None else 0.0
     out["_u"] = max(u_t, u_r)
     out["_motivo"] = "pioggia" if u_r >= u_t else "temperatura"
     return out
+
+
+# --------------------------------------------------------------------------------------
+# Il perché: la causa principale del tempo di ogni giorno, con la carta che la mostra
+# --------------------------------------------------------------------------------------
+def at_iso(day, hour):
+    return iso(at(dt.date.fromisoformat(day), hour))
+
+
+def reasons(days, today):
+    """Aggiunge a ogni giorno "perche": fino a tre cause in ordine di importanza, ognuna con la carta da guardare."""
+    prev = None
+    for d in days:
+        if d is None:
+            prev = None
+            continue
+        a = d.pop("_aria")
+        out = []
+        p, mm = a["p"] or 0, a["mm"] or 0
+        if prev is not None and a["t850"] is not None and prev["t850"] is not None:
+            delta = a["t850"] - prev["t850"]
+            if abs(delta) >= 4:
+                out.append((abs(delta), dict(tipo="freddo" if delta < 0 else "caldo", delta=rnd(abs(delta), 0),
+                                              dir=rnd(a["dir850"], 0), carta="t850", ora=at_iso(d["data"], 12))))
+        if d["codice"] in ("neve", "pioggia-neve") and a["fzl"] is not None:
+            out.append((9, dict(tipo="neve", zero=int(round(a["fzl"] / 100.0)) * 100, carta="zero",
+                                ora=at_iso(d["data"], a["h_rain"]))))
+        if a["cape"] is not None and a["cape"] >= 800 and p >= 0.4:
+            out.append((6, dict(tipo="temporali", cape=rnd(a["cape"], 0), carta="cape", ora=at_iso(d["data"], 12))))
+        w = d.get("vento") or {}
+        if (w.get("kmh") or 0) >= 39 or (w.get("raffiche") or 0) >= 65:
+            out.append((5 + (w.get("raffiche") or 0) / 40, dict(tipo="vento", carta="gust" if w.get("raffiche") else "wind10",
+                                                                 ora=at_iso(d["data"], a["h_vento"]))))
+        if a["p_min"] is not None and a["p_min"] <= 1008 and p >= 0.5:
+            out.append((4 + (1008 - a["p_min"]) / 4, dict(tipo="bassa", hpa=rnd(a["p_min"], 0), carta="mslp",
+                                                          ora=at_iso(d["data"], a["h_pmin"]))))
+        elif a["p_mean"] is not None and a["p_mean"] >= 1022 and p <= 0.2:
+            out.append((3.5, dict(tipo="alta", hpa=rnd(a["p_mean"], 0), carta="mslp", ora=at_iso(d["data"], 12))))
+        if p >= 0.6 and mm >= 2 and not any(r[1]["tipo"] in ("bassa", "neve", "temporali") for r in out):
+            out.append((3, dict(tipo="pioggia", carta="prec6", ora=at_iso(d["data"], a["h_rain"]))))
+        d["perche"] = [r for _, r in sorted(out, key=lambda x: -x[0])[:3]]
+        prev = a
 
 
 # --------------------------------------------------------------------------------------
@@ -472,34 +545,52 @@ def build(public, now=None, log=print):
         log("La tua città: nessun campione dei modelli, salto")
         return None
     today = now.astimezone(ROME).date()
-    places = luoghi.active()
+    places, cells = luoghi.active(), luoghi.cells()
+    points = places + cells
     all_days = []
-    for p in places:
+    for p in points:
         all_days.append([place_day(p, today + dt.timedelta(days=k), sources, now) for k in range(DAYS)])
     G = growth(all_days)
     runs = {sid: iso(s.run) for sid, s in sources.items()}
     members = sum(next(iter(s.vars.values())).shape[1] for s in sources.values() if s.ens and s.vars)
-    out_dir = os.path.join(public, "data", "citta")
     index = []
-    for p, days in zip(places, all_days):
+    active_ids = {p["id"] for p in places}
+    for p, days in zip(points, all_days):
+        reasons(days, today)
         for k, d in enumerate(days):
             if d is not None:
                 d["incertezza"] = when(d, k, G, today)
         days = [d for d in days if d is not None]
-        path = os.path.join(out_dir, f"{p['id']}.json")
+        is_city = p["id"] in active_ids
+        path = os.path.join(public, "data", "citta" if is_city else "celle", f"{p['id']}.json")
         old = read_json(path)
-        data = dict(
-            formato=FORMAT, id=p["id"], nome=p["name"], altro=p["alt_name"], provincia=p["provincia"], sigla=p["sigla"],
-            regione=p["regione"], lat=p["lat"], lon=p["lon"], alt=p["alt"], aggiornato=iso(now), corse=runs,
-            membri=members, giorni=days,
-            storia=merge_history(old.get("storia") if old else None, days, now, today))
+        head = (dict(id=p["id"], nome=p["name"], altro=p["alt_name"], provincia=p["provincia"], sigla=p["sigla"],
+                     regione=p["regione"]) if is_city else dict(id=p["id"], comuni=len(p["comuni"])))
+        data = dict(formato=FORMAT, **head, lat=p["lat"], lon=p["lon"], alt=p["alt"], aggiornato=iso(now), corse=runs,
+                    membri=members, giorni=days,
+                    storia=merge_history(old.get("storia") if old else None, days, now, today))
         write_json(path, data)
-        brief = [dict(data=d["data"], min=d["min"], max=d["max"], p=d["pioggia"].get("p"), codice=d["codice"],
-                      stato=d["incertezza"]["stato"]) for d in days[:3]]
-        index.append(dict(id=p["id"], nome=p["name"], altro=p["alt_name"], sigla=p["sigla"],
-                          provincia=p["provincia"], regione=p["regione"], lat=p["lat"], lon=p["lon"],
-                          alt=p["alt"], giorni=brief))
-    write_json(os.path.join(out_dir, "indice.json"),
+        if is_city:
+            brief = [dict(data=d["data"], min=d["min"], max=d["max"], p=d["pioggia"].get("p"), codice=d["codice"],
+                          stato=d["incertezza"]["stato"]) for d in days[:3]]
+            index.append(dict(id=p["id"], nome=p["name"], altro=p["alt_name"], sigla=p["sigla"],
+                              provincia=p["provincia"], regione=p["regione"], lat=p["lat"], lon=p["lon"],
+                              alt=p["alt"], giorni=brief))
+    write_json(os.path.join(public, "data", "citta", "indice.json"),
                dict(formato=FORMAT, aggiornato=iso(now), corse=runs, crescita=[rnd(x, 2) for x in G], luoghi=index))
-    log(f"La tua città: {len(index)} luoghi aggiornati")
+    write_comuni(public)
+    log(f"La tua città: {len(index)} capoluoghi e {len(cells)} zone per {len(luoghi.all_places())} comuni")
     return dict(sources=sources, places=places, today=today)
+
+
+def write_comuni(public):
+    """Elenco di tutti i comuni per la ricerca: nome, provincia, posizione, quota e file della previsione."""
+    files = luoghi.file_of()
+    prov = {}
+    rows = []
+    for p in luoghi.all_places():
+        prov.setdefault(p["sigla"], [p["provincia"], p["regione"]])
+        rows.append([p["id"], p["name"], p["alt_name"] or "", p["sigla"], p["lat"], p["lon"], p["alt"], files[p["id"]]])
+    write_json(os.path.join(public, "data", "citta", "comuni.json"),
+               dict(formato=FORMAT, campi=["id", "nome", "altro", "sigla", "lat", "lon", "alt", "file"],
+                    province=dict(sorted(prov.items())), comuni=rows))

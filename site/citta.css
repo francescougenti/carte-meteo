@@ -153,6 +153,8 @@
 .models-t tbody th{font-weight:400}
 .models-t .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .models-t td.t-max,.models-t td.t-min{font-weight:700}
+.models-t tr.out td{opacity:.5}
+.models-t small{color:var(--muted);font-size:12px}
 .to-charts{display:inline-block;margin-top:14px;font-weight:600}
 
 /* ---------- come funziona ---------- */
@@ -172,3 +174,10 @@
   .fasce{gap:4px}
 }
 @media print{.search,.near,.to-charts{display:none}}
+
+/* ---------- il perché, con la carta ---------- */
+.why-map{margin:8px 0 4px}
+.why-map img{width:100%;max-width:560px;height:auto;display:block;border-radius:8px;border:1px solid var(--rule);background:#fff}
+.why-map figcaption{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.4}
+.c-head .zone{margin:6px 0 0;font-size:13.5px;color:var(--muted);max-width:60ch}
+.d-col>h3:first-child{margin-top:16px!important}

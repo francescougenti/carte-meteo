@@ -2,23 +2,26 @@
 
 Sito meteo che si aggiorna da solo a ogni nuova corsa dei modelli, con due anime:
 
-- **La tua città** (pagina iniziale), per tutti: la previsione dei capoluoghi di provincia per 10 giorni,
+- **La tua città** (pagina iniziale), per tutti: la previsione di tutti i 7.894 comuni italiani per 10 giorni,
   con quanto è sicura, quando conviene ricontrollarla e cosa è cambiato dall'ultima visita.
 - **Per appassionati**: carte in stile Meteociel, confronto tra modelli, ensemble e meteogrammi.
 
 ## La tua città
 
-Per ogni capoluogo (più Ostuni) e per ogni giorno:
+Per ogni comune e per ogni giorno (i capoluoghi e Ostuni sono calcolati nel loro punto, gli altri comuni in zone di circa
+25 km e poi adattati alla loro quota):
 
 - minima, massima, pioggia, nuvole, vento con il nome italiano (Scirocco, Maestrale…), quota neve e quattro fasce della giornata.
   Sono una media pesata di ECMWF IFS, AIFS, GFS e ICON-EU, con la temperatura corretta per l'altitudine della città;
-- **gli 81 futuri**: la probabilità di pioggia è il numero di membri degli ensemble (50 ECMWF + 31 GEFS) in cui piove almeno 1 mm;
-  le fasce colorate del grafico "I prossimi 10 giorni" mostrano dove cadono massime e minime in 8 futuri su 10;
+- **gli 81 scenari**: la probabilità di pioggia è il numero di membri degli ensemble (50 ECMWF + 31 GEFS) in cui piove almeno 1 mm;
+  le fasce colorate del grafico "I prossimi 10 giorni" mostrano dove cadono massime e minime in 8 scenari su 10;
 - **deciso, quasi deciso, ancora aperto** (il piccolo ventaglio più o meno aperto) e **quando lo saprai**: il giorno in cui
-  conviene ricontrollare, stimato da come si restringono i futuri con l'avvicinarsi della data;
+  conviene ricontrollare, stimato da come si restringono gli scenari con l'avvicinarsi della data;
 - **cosa è cambiato**: dall'ultima visita (ricordata solo nel browser) o rispetto a ieri, e come è cambiata la previsione
   per ogni giorno negli ultimi giorni (lo storico è conservato nei dati del sito);
-- quattro modelli a confronto e un collegamento alle carte di quel giorno.
+- **il perché, con la carta**: la causa principale del tempo del giorno (aria fredda o calda in arrivo e da dove,
+  bassa o alta pressione, instabilità, vento, zero termico) in una frase, con la carta dei modelli che la mostra;
+- quattro modelli a confronto.
 
 I file dei dati sono descritti in [docs/formato-dati.md](docs/formato-dati.md). Il sito raccoglie da subito anche le
 previsioni dei modelli e le temperature osservate negli aeroporti (METAR), per confrontare nei prossimi mesi

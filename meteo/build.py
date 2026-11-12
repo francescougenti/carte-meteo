@@ -110,7 +110,7 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
     results, prev_cum = {}, None
     t0 = time.time()
     rows, sampler = [], None
-    places = luoghi.active()
+    places = luoghi.sample_points()
     prows, psampler, orog = [], None, None
 
     def collect(done):
