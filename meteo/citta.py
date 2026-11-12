@@ -153,9 +153,14 @@ def det_day(src, place, day, now):
     pid = place["id"]
     c = corr(src, pid, place)
     g = lambda v, h: src.get(v, pid, at(day, h))  # noqa: E731
-    t = {h: g("t2m", h) for h in (0, 6, 12, 18, 24)}
+    temp = lambda v, h: plausible(g(v, h))  # noqa: E731
+    t = {h: temp("t2m", h) for h in (0, 6, 12, 18, 24)}
+    mx12, mx18, mn6 = temp("tmax6", 12), temp("tmax6", 18), temp("tmin6", 6)
+    # massime e minime "del periodo" coerenti con le temperature agli estremi del periodo, altrimenti si scartano
+    mx12 = mx12 if consistent_max(mx12, t[6], t[12]) else None
+    mx18 = mx18 if consistent_max(mx18, t[12], t[18]) else None
+    mn6 = mn6 if consistent_min(mn6, t[0], t[6]) else None
     t = {h: (v + c if v is not None else None) for h, v in t.items()}
-    mx12, mx18, mn6 = g("tmax6", 12), g("tmax6", 18), g("tmin6", 6)
     hi = [t[12], t[18], *(v + c for v in (mx12, mx18) if v is not None)]
     lo = [t[0], t[6], *(v + c for v in [mn6] if v is not None)]
     # massima e minima solo se il modello copre le ore in cui di solito cadono (corse partite a giornata in corso)
@@ -195,12 +200,28 @@ def det_day(src, place, day, now):
     return out
 
 
+def plausible(v, lo=-60.0, hi=55.0):
+    """Temperatura (°C) fisicamente possibile, altrimenti None (dati rovinati, campi a 0 K...)."""
+    return v if v is not None and lo < v < hi else None
+
+
+def consistent_max(m, a, b):
+    ends = [x for x in (a, b) if x is not None]
+    return m is not None and (not ends or max(ends) - 1.5 <= m <= max(ends) + 12)
+
+
+def consistent_min(m, a, b):
+    ends = [x for x in (a, b) if x is not None]
+    return m is not None and (not ends or min(ends) - 12 <= m <= min(ends) + 1.5)
+
+
 def ens_day(src, place, day, now):
     """Massime, minime e pioggia del giorno per ogni membro di un ensemble."""
     pid = place["id"]
     g = lambda v, h: src.get(v, pid, at(day, h))  # noqa: E731
-    hi = [x for x in (g("t2m", 12), g("t2m", 18)) if x is not None]
-    lo = [x for x in (g("t2m", 0), g("t2m", 6)) if x is not None]
+    ok = lambda x: None if x is None else np.where((x > -60) & (x < 55), x, np.nan)  # noqa: E731
+    hi = [x for x in (ok(g("t2m", 12)), ok(g("t2m", 18))) if x is not None]
+    lo = [x for x in (ok(g("t2m", 0)), ok(g("t2m", 6))) if x is not None]
     need = [h for h in (6, 12, 18, 24) if at(day, h) > now]
     per = [g("tp6", h) for h in need]
     out = {}
@@ -223,14 +244,15 @@ def ens_day(src, place, day, now):
     return out
 
 
-def blend(per_model, key):
-    num = den = 0.0
-    for sid, d in per_model.items():
-        v = d.get(key)
-        if v is not None and not (isinstance(v, float) and math.isnan(v)):
-            num += WEIGHTS[sid] * v
-            den += WEIGHTS[sid]
-    return num / den if den else None
+def blend(per_model, key, tol=None):
+    """Media pesata dei modelli. Con tol: con almeno 3 modelli si scarta chi si allontana più di tol dalla mediana."""
+    vals = {sid: d.get(key) for sid, d in per_model.items()}
+    vals = {sid: v for sid, v in vals.items() if v is not None and not (isinstance(v, float) and math.isnan(v))}
+    if tol is not None and len(vals) >= 3:
+        med = float(np.median(list(vals.values())))
+        vals = {sid: v for sid, v in vals.items() if abs(v - med) <= tol}
+    den = sum(WEIGHTS[sid] for sid in vals)
+    return sum(WEIGHTS[sid] * v for sid, v in vals.items()) / den if den else None
 
 
 def wind_name(u, v):
@@ -290,7 +312,7 @@ def place_day(place, day, sources, now):
                 ens[sid] = e
     if not det:
         return None
-    tmax, tmin, mm = blend(det, "max"), blend(det, "min"), blend(det, "mm")
+    tmax, tmin, mm = blend(det, "max", tol=8), blend(det, "min", tol=8), blend(det, "mm")
     out = dict(data=day.isoformat(), max=rnd(tmax), min=rnd(tmin))
     # forbice della temperatura dall'ensemble, centrata sulla previsione dei modelli
     for key, val in (("max", tmax), ("min", tmin)):
@@ -343,7 +365,7 @@ def place_day(place, day, sources, now):
     fasce = []
     for k in range(4):
         parts = {sid: d["fasce"][k] for sid, d in det.items()}
-        t, m, nb = blend(parts, "t"), blend(parts, "mm"), blend(parts, "nubi")
+        t, m, nb = blend(parts, "t", tol=8), blend(parts, "mm"), blend(parts, "nubi")
         if t is None and m is None:
             fasce.append(None)
             continue

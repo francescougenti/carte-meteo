@@ -307,6 +307,8 @@ class ECMWF:
         entries = [json.loads(line) for line in text.splitlines() if line.strip()]
         out = {}
         fields = dict(self.FIELDS, **(self.STEP0 if step == 0 else {}))
+        if step == 0:  # alla scadenza 0 massime e minime "del periodo" non hanno senso (valgono 0 K)
+            fields.pop("tmax6", None), fields.pop("tmin6", None)
         for key, (names, levtype, level) in fields.items():
             for name in names:
                 e = next((e for e in entries if e.get("param") == name and e.get("levtype") == levtype

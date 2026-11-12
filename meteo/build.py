@@ -308,17 +308,16 @@ def main(argv=None):
             traceback.print_exc()
     if updated:
         save_manifest(a.public, manifest)
-    city_index = os.path.join(a.public, "data", "citta", "indice.json")
-    if updated or a.force or not os.path.exists(city_index):
-        restore_state(a.public)
-        try:
-            t0 = time.time()
-            info = citta.build(a.public, log=log)
-            verifica.update(a.public, info, log=log)
-            log(f"Previsione per città e verifica: {time.time() - t0:.0f} s")
-        except Exception as e:
-            log(f"::warning::Previsione per città non aggiornata: {e}")
-            traceback.print_exc()
+    # pochi secondi: si ricalcola a ogni giro, così anche le correzioni al calcolo arrivano subito
+    restore_state(a.public)
+    try:
+        t0 = time.time()
+        info = citta.build(a.public, log=log)
+        verifica.update(a.public, info, log=log)
+        log(f"Previsione per città e verifica: {time.time() - t0:.0f} s")
+    except Exception as e:
+        log(f"::warning::Previsione per città non aggiornata: {e}")
+        traceback.print_exc()
     size = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(a.public) for f in fs) / 1e6
     log(f"Spazio occupato dal sito: {size:.0f} MB")
     if size > 950:
