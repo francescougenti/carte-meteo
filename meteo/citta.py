@@ -80,12 +80,12 @@ class Source:
             return
         rows = [older.row.get(pid) for pid in self.ids]
         for k, a in list(self.vars.items()):
-            if k not in older.vars:
-                continue
+            # le variabili che la corsa precedente non aveva restano vuote, ma della stessa lunghezza
             b = np.full(a.shape[:-1] + (len(extra),), np.nan, np.float32)
-            for i, r in enumerate(rows):
-                if r is not None:
-                    b[i] = older.vars[k][r][..., extra]
+            if k in older.vars:
+                for i, r in enumerate(rows):
+                    if r is not None:
+                        b[i] = older.vars[k][r][..., extra]
             self.vars[k] = np.concatenate([a, b], axis=-1)
         self.valid += [older.valid[j] for j in extra]
         self.col = {t: j for j, t in enumerate(self.valid)}
@@ -95,7 +95,7 @@ class Source:
         """Valore (deterministico) o vettore dei membri (ensemble); None se manca."""
         a = self.vars.get(var)
         i, j = self.row.get(pid), self.col.get(t)
-        if a is None or i is None or j is None:
+        if a is None or i is None or j is None or j >= a.shape[-1]:
             return None
         v = a[i][..., j]
         if self.ens:
