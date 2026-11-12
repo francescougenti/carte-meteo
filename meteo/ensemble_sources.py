@@ -24,7 +24,8 @@ class GEFSEns:
     max_step = 240
     members = ["gec00"] + [f"gep{i:02d}" for i in range(1, 31)]
     roots = [os.environ.get("METEO_GEFS_ROOT") or "https://noaa-gefs-pds.s3.amazonaws.com"]
-    FIELDS = {"z500": ("HGT", "500 mb"), "t850": ("TMP", "850 mb"), "mslp": ("PRMSL", "mean sea level")}
+    FIELDS = {"z500": ("HGT", "500 mb"), "t850": ("TMP", "850 mb"), "mslp": ("PRMSL", "mean sea level"),
+              "t2m": ("TMP", "2 m above ground")}
     accum = "bucket"  # la pioggia arriva già in intervalli di 6 ore
 
     def steps(self, run):
@@ -74,7 +75,7 @@ class GEFSEns:
             return a / 100.0
         if key == "z500":
             return a / 10.0
-        if key == "t850":
+        if key in ("t850", "t2m"):
             return a - 273.15
         return a
 
@@ -93,7 +94,7 @@ class ECMWFEns:
         "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com",
     ]
     FIELDS = {"z500": ("gh", "pl", "500"), "t850": ("t", "pl", "850"), "mslp": ("msl", "sfc", None),
-              "tp_total": ("tp", "sfc", None)}
+              "tp_total": ("tp", "sfc", None), "t2m": ("2t", "sfc", None)}
     accum = "total"  # pioggia cumulata dall'inizio: le 6 ore si ottengono per differenza
 
     def steps(self, run):
@@ -141,7 +142,7 @@ class ECMWFEns:
             return a / 100.0
         if key == "z500":
             return a / 10.0
-        if key == "t850":
+        if key in ("t850", "t2m"):
             return a - 273.15
         if key == "tp_total":
             return a * 1000.0

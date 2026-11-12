@@ -9,12 +9,13 @@ from scipy.ndimage import map_coordinates
 from . import config as C
 
 
-def sampler(lats, lons):
+def sampler(lats, lons, places=None):
     """Funzione che legge un campo (griglia lats×lons) sulle località con interpolazione bilineare."""
+    places = C.CITIES if places is None else places
     dlat, dlon = float(lats[1] - lats[0]), float(lons[1] - lons[0])
     glob = len(lons) * dlon >= 359.9
-    la = np.array([c["lat"] for c in C.CITIES])
-    lo = np.array([c["lon"] for c in C.CITIES])
+    la = np.array([c["lat"] for c in places])
+    lo = np.array([c["lon"] for c in places])
     cj = (la - float(lats[0])) / dlat
     ci = (lo - float(lons[0])) / dlon
     if glob:
@@ -70,6 +71,42 @@ def write_det(public, model, run_iso, rows):
             if all(v is None for v in c[n]):
                 del c[n]
     _write(os.path.join(public, "data", "punti", f"{model.id}.json"), data)
+
+
+# --------------------------------------------------------------------------------------
+# Campioni per la previsione "La tua città": tutti i luoghi attivi, file compatti .npz
+# --------------------------------------------------------------------------------------
+PLACE_VARS = ("t2m", "tmax6", "tmin6", "tp6", "tcc", "u10", "v10", "gust", "fzl", "snow", "t850", "cape", "mslp")
+
+
+def place_values(arrays, f):
+    """{variabile: valori sui luoghi} di una scadenza di un modello deterministico."""
+    return {n: f(arrays[n]).astype(np.float32) for n in PLACE_VARS if arrays.get(n) is not None}
+
+
+def write_samples(public, model_id, run_iso, ids, hs, valids, series, orog=None):
+    """series: {variabile: array (n_luoghi, n_scadenze)} oppure (n_luoghi, n_membri, n_scadenze)."""
+    path = os.path.join(public, "data", "campioni", f"{model_id}.npz")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    extra = {} if orog is None else {"orog": np.asarray(orog, np.float32)}
+    with open(path + ".tmp", "wb") as fh:
+        np.savez_compressed(fh, run=np.array(run_iso), ids=np.array(ids), h=np.array(hs, np.int32),
+                            valid=np.array(valids), **{f"v_{k}": np.asarray(v, np.float32) for k, v in series.items()},
+                            **extra)
+    os.replace(path + ".tmp", path)
+
+
+def det_series(rows, ids):
+    """rows: lista di (h, valid_iso, {variabile: valori}) -> {variabile: (n_luoghi, n_scadenze)}."""
+    names = sorted({k for r in rows for k in r[2]})
+    out = {}
+    for n in names:
+        a = np.full((len(ids), len(rows)), np.nan, np.float32)
+        for j, r in enumerate(rows):
+            if n in r[2]:
+                a[:, j] = r[2][n]
+        out[n] = a
+    return out
 
 
 def _write(path, data):

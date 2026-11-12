@@ -197,6 +197,16 @@ class GFS:
                     out["tp_bucket6"] = (url, (r["offset"], r["end"]), r["sub"])
                 if r["time"] == f"0-{fh} hour acc fcst":
                     out["tp_total"] = (url, (r["offset"], r["end"]), r["sub"])
+            # massima e minima a 2 m nelle 6 ore precedenti (servono per le temperature del giorno)
+            for key, var in (("tmax6", "TMAX"), ("tmin6", "TMIN")):
+                cand = [r for r in recs if r["var"] == var and r["level"] == "2 m above ground"]
+                best = next((r for r in cand if r["time"].startswith(f"{fh - 6}-{fh} hour")), None)
+                if best:
+                    out[key] = (url, (best["offset"], best["end"]), best["sub"])
+        else:
+            r = next((r for r in recs if r["var"] == "HGT" and r["level"] == "surface"), None)
+            if r:  # quota del terreno nel modello: serve a correggere la temperatura con l'altitudine
+                out["orog"] = (url, (r["offset"], r["end"]), r["sub"])
         return out
 
     def convert(self, key, a):
@@ -204,7 +214,7 @@ class GFS:
             return a / 100.0
         if key.startswith("z"):
             return a / 10.0
-        if key in ("t850", "t500", "t2m"):
+        if key in ("t850", "t500", "t2m", "tmax6", "tmin6"):
             return a - 273.15
         if key == "snow":
             return a * 100.0  # m -> cm
@@ -261,7 +271,11 @@ class ECMWF:
         "t600": (["t"], "pl", "600"),
         "z925": (["gh"], "pl", "925"), "z850": (["gh"], "pl", "850"), "z700": (["gh"], "pl", "700"),
         "z600": (["gh"], "pl", "600"),
+        # massima e minima a 2 m nelle ore precedenti, se il portale le pubblica
+        "tmax6": (["mx2t6", "mx2t3"], "sfc", None),
+        "tmin6": (["mn2t6", "mn2t3"], "sfc", None),
     }
+    STEP0 = {"orog": (["z"], "sfc", None)}  # geopotenziale del terreno, solo alla prima scadenza
 
     def last_step(self, t):
         return self.max_step if t.hour in (0, 12) else self.short_step
@@ -292,7 +306,8 @@ class ECMWF:
         text = text.decode()
         entries = [json.loads(line) for line in text.splitlines() if line.strip()]
         out = {}
-        for key, (names, levtype, level) in self.FIELDS.items():
+        fields = dict(self.FIELDS, **(self.STEP0 if step == 0 else {}))
+        for key, (names, levtype, level) in fields.items():
             for name in names:
                 e = next((e for e in entries if e.get("param") == name and e.get("levtype") == levtype
                           and (level is None or str(e.get("levelist")) == level)), None)
@@ -307,8 +322,10 @@ class ECMWF:
             return a / 100.0
         if key.startswith("z"):
             return a / 10.0
-        if key == "t2m" or (key.startswith("t") and key[1:].isdigit()):
+        if key in ("t2m", "tmax6", "tmin6") or (key.startswith("t") and key[1:].isdigit()):
             return a - 273.15
+        if key == "orog":
+            return a / 9.80665  # geopotenziale -> m
         if key == "tp_total":
             return a * 1000.0  # m -> mm
         if key == "tcc" and np.nanmax(a) <= 1.01:
@@ -428,6 +445,7 @@ class ICONEU:
         "u10": ("u_10m", None), "v10": ("v_10m", None), "u250": ("u", "250"), "v250": ("v", "250"),
         "gust": ("vmax_10m", None), "cape": ("cape_ml", None), "tcc": ("clct", None), "pwat": ("tqv", None),
         "tp_total": ("tot_prec", None), "snow": ("h_snow", None), "fzl": ("hzerocl", None),
+        "tmax6": ("tmax_2m", None), "tmin6": ("tmin_2m", None),
     }
 
     def steps(self, run):
@@ -447,14 +465,20 @@ class ICONEU:
         return None
 
     def plan(self, run, step):
-        return {k: (self.url(run.root, run.time, step, p, lev), None, 0) for k, (p, lev) in self.FIELDS.items()}
+        out = {k: (self.url(run.root, run.time, step, p, lev), None, 0) for k, (p, lev) in self.FIELDS.items()}
+        if step == 0:
+            out.pop("tmax6"), out.pop("tmin6")
+            stamp, h = run.time.strftime("%Y%m%d%H"), run.time.strftime("%H")
+            out["orog"] = (f"{run.root}/{h}/hsurf/icon-eu_europe_regular-lat-lon_time-invariant_{stamp}_HSURF.grib2.bz2",
+                           None, 0)
+        return out
 
     def convert(self, key, a):
         if key == "mslp":
             return a / 100.0
         if key.startswith("z"):
             return a / 9.80665 / 10.0  # geopotenziale (m²/s²) -> dam
-        if key in ("t850", "t500", "t2m"):
+        if key in ("t850", "t500", "t2m", "tmax6", "tmin6"):
             return a - 273.15
         if key == "snow":
             return a * 100.0

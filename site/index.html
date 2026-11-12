@@ -3,12 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Carte meteo: GFS, ECMWF, AIFS, ICON-EU ed ensemble</title>
-<meta name="description" content="Carte meteo GFS, ECMWF, AIFS e ICON-EU, ensemble e meteogrammi, aggiornati a ogni nuova corsa.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='29' fill='none' stroke='%2313283D' stroke-width='3'/%3E%3Ccircle cx='32' cy='32' r='19' fill='none' stroke='%2313283D' stroke-width='3'/%3E%3Ctext x='32' y='42' font-family='Arial' font-weight='700' font-size='28' text-anchor='middle' fill='%23C8102E'%3EB%3C/text%3E%3C/svg%3E">
+<title>Ventaglio: il meteo della tua città e quanto è sicuro</title>
+<meta name="description" content="Il meteo dei capoluoghi italiani con quanto è sicura la previsione, quando conviene ricontrollare e cosa è cambiato. Per appassionati: carte GFS, ECMWF, AIFS, ICON-EU ed ensemble.">
+<meta name="theme-color" content="#13283D">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Ventaglio">
+<meta property="og:title" content="Ventaglio: il meteo della tua città e quanto è sicuro">
+<meta property="og:description" content="Quattro modelli e 81 futuri possibili per ogni giorno: la previsione, quanto è sicura e quando ricontrollarla.">
+<meta property="og:image" content="https://francescougenti.github.io/carte-meteo/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="icona.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icona-180.png">
+<script>try{var t=JSON.parse(localStorage.getItem("ventaglio.tema"));if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="citta.css">
 <style>
 :root{
   --paper:#E9EEF1;      /* fondo: il grigio-azzurro dei mari sulle carte */
@@ -20,6 +32,29 @@
   --bassa:#C8102E;      /* la "B" delle carte: la scadenza corrente */
   --font:"Archivo","Arial Narrow",system-ui,sans-serif;
   --gap:16px;
+  --max:#C8102E;        /* massime: il rosso della B */
+  --min:#0B4EA2;        /* minime: il blu della A */
+  --rain:#1C7C93; --rain-soft:#A6D2DC; --rain-deep:#0D4B5A;
+  --sun:#E3A21A; --moon:#8E9DAC; --cloud-dark:#B3BEC8;
+  --tint:#F3F6F8; --hover:#F2F5F7; --sel:#EAF1FA; --rule-strong:#9FB0BD; --fan-a:#C9D7E2; --fan-b:#FFFFFF;
+  --focus:rgba(11,78,162,.25); --shadow:rgba(19,40,61,.14); --overlay:rgba(255,255,255,.92);
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --paper:#0D1822; --panel:#13212E; --ink:#E4ECF2; --muted:#93A5B4; --rule:#25384A; --rule-strong:#4C6276;
+  --alta:#7AB0FF; --bassa:#FF6F66; --max:#FF7D72; --min:#82B4FF;
+  --rain:#4DB8D2; --rain-soft:#24525E; --rain-deep:#A8E4F2; --sun:#F2B73A; --moon:#C9D3DC; --cloud-dark:#4E6275;
+  --tint:#172937; --hover:#1A2D3D; --sel:#1B3149; --focus:rgba(122,176,255,.35); --shadow:rgba(0,0,0,.5); --fan-a:#3A5770; --fan-b:#13212E;
+  --overlay:rgba(19,33,46,.92); color-scheme:dark;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0D1822; --panel:#13212E; --ink:#E4ECF2; --muted:#93A5B4; --rule:#25384A; --rule-strong:#4C6276;
+    --alta:#7AB0FF; --bassa:#FF6F66; --max:#FF7D72; --min:#82B4FF;
+    --rain:#4DB8D2; --rain-soft:#24525E; --rain-deep:#A8E4F2; --sun:#F2B73A; --moon:#C9D3DC; --cloud-dark:#4E6275;
+    --tint:#172937; --hover:#1A2D3D; --sel:#1B3149; --focus:rgba(122,176,255,.35); --shadow:rgba(0,0,0,.5); --fan-a:#3A5770; --fan-b:#13212E;
+    --overlay:rgba(19,33,46,.92); color-scheme:dark;
+  }
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -34,7 +69,7 @@ button,select{font:inherit;color:inherit}
 .models{display:flex;border:1px solid var(--ink);border-radius:6px;overflow:hidden}
 .models button{border:0;background:none;padding:6px 16px;cursor:pointer;font-weight:600;font-variation-settings:"wdth" 90}
 .models button+button{border-left:1px solid var(--ink)}
-.models button[aria-pressed="true"]{background:var(--ink);color:#fff}
+.models button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
 .runs{margin-left:auto;display:flex;gap:6px 16px;font-size:12.5px;color:var(--muted);flex-wrap:wrap;justify-content:flex-end;max-width:640px}
 .runs b{color:var(--ink);font-weight:600}
 .runs .fresh{color:var(--bassa)}
@@ -48,9 +83,9 @@ button,select{font:inherit;color:inherit}
 .side h3{font-size:12.5px;font-weight:600;color:var(--muted);margin:12px 16px 2px;font-variation-settings:"wdth" 90}
 .opt{display:block;width:100%;text-align:left;border:0;background:none;padding:5px 16px 5px 13px;cursor:pointer;
   border-left:3px solid transparent;font-size:14.5px;line-height:1.3}
-.opt:hover{background:#F2F5F7}
-.opt[aria-pressed="true"]{border-left-color:var(--alta);color:var(--alta);font-weight:600;background:#EEF3FA}
-.opt[disabled]{color:#A3AEB8;cursor:default;background:none}
+.opt:hover{background:var(--hover)}
+.opt[aria-pressed="true"]{border-left-color:var(--alta);color:var(--alta);font-weight:600;background:var(--sel)}
+.opt[disabled]{color:var(--rule-strong);cursor:default;background:none}
 .chartSelect{display:none}
 
 /* ---------- carta ---------- */
@@ -62,7 +97,7 @@ button,select{font:inherit;color:inherit}
 .controls{margin-left:auto;display:flex;align-items:center;gap:6px}
 .ctl{width:38px;height:38px;border:1px solid var(--rule);background:var(--panel);border-radius:50%;cursor:pointer;display:grid;place-items:center}
 .ctl:hover{border-color:var(--ink)}
-.ctl.play{width:46px;height:46px;background:var(--ink);border-color:var(--ink);color:#fff}
+.ctl.play{width:46px;height:46px;background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .ctl svg{width:16px;height:16px;fill:currentColor}
 .speed{margin-left:6px;border:1px solid var(--rule);background:var(--panel);border-radius:6px;padding:7px 8px;font-size:13.5px}
 
@@ -73,7 +108,7 @@ button,select{font:inherit;color:inherit}
 .map img{display:block;max-width:100%;height:auto;max-height:calc(100vh - 250px);width:auto}
 .maps.two .map img{max-height:none;width:100%}
 .map .missing{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:24px;
-  background:rgba(255,255,255,.92);color:var(--muted);font-size:15px}
+  background:var(--overlay);color:var(--muted);font-size:15px}
 .map.off .missing{display:grid}
 
 /* ---------- linea del tempo: la striscia del barografo ---------- */
@@ -87,8 +122,8 @@ button,select{font:inherit;color:inherit}
 .slot{position:relative;width:38px;height:34px;border:0;background:none;cursor:pointer;font-size:13px;
   font-variation-settings:"wdth" 75;font-weight:500;color:var(--ink);padding:0;
   background-image:linear-gradient(var(--rule),var(--rule));background-size:1px 7px;background-position:center top;background-repeat:no-repeat}
-.slot:hover{background-color:#F2F5F7}
-.slot.na{color:#A9B3BC}
+.slot:hover{background-color:var(--hover)}
+.slot.na{color:var(--rule-strong)}
 .slot.older{color:var(--muted);text-decoration:underline dotted;text-underline-offset:3px}
 .slot[aria-current="true"]{color:var(--bassa);font-weight:700}
 .slot[aria-current="true"]::after{content:"";position:absolute;left:5px;right:5px;bottom:0;height:3px;background:var(--bassa);border-radius:2px 2px 0 0}
@@ -99,7 +134,7 @@ footer{padding:4px 20px 28px;font-size:12.5px;color:var(--muted);max-width:980px
 footer a{color:inherit}
 .empty{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:40px 28px;max-width:640px}
 .empty h2{margin:0 0 8px;font-size:20px}
-.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--paper);
   padding:10px 16px;border-radius:8px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
@@ -111,7 +146,7 @@ footer a{color:inherit}
   #regions .opt{flex:0 0 auto;width:auto;border:1px solid var(--rule);border-radius:16px;padding:4px 12px}
   #regions .opt[aria-pressed="true"]{border-color:var(--alta)}
   #charts{display:none}
-  .chartSelect{display:block;margin:0 12px;width:calc(100% - 24px);padding:8px;border:1px solid var(--rule);border-radius:6px;background:#fff}
+  .chartSelect{display:block;margin:0 12px;width:calc(100% - 24px);padding:8px;border:1px solid var(--rule);border-radius:6px;background:var(--panel)}
   .maps.two{grid-template-columns:1fr}
   .map img{max-height:none;width:100%}
   .lead{font-size:32px}
@@ -120,7 +155,7 @@ footer a{color:inherit}
 }
 @media (prefers-reduced-motion:reduce){.timeline{scroll-behavior:auto}.toast{transition:none}}
 
-.side select{display:block;margin:0 16px 8px;width:calc(100% - 32px);padding:6px 8px;border:1px solid var(--rule);border-radius:6px;background:#fff;font-size:14px}
+.side select{display:block;margin:0 16px 8px;width:calc(100% - 32px);padding:6px 8px;border:1px solid var(--rule);border-radius:6px;background:var(--panel);font-size:14px}
 .side label{display:block;font-size:12.5px;color:var(--muted);margin:0 16px 3px}
 .side .note{font-size:12.5px;color:var(--muted);margin:6px 16px 0;line-height:1.35}
 .swatch{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:7px}
@@ -137,22 +172,49 @@ footer a{color:inherit}
 .section-title{grid-column:1/-1;margin:14px 0 0;font-size:18px;font-variation-settings:"wdth" 85}
 .section-title small{font-size:13px;color:var(--muted);font-weight:400;margin-left:8px}
 .hidden{display:none !important}
+[hidden]{display:none !important}
+
+/* ---------- marchio e navigazione ---------- */
+.brand{display:inline-flex;align-items:center;gap:8px;font-size:23px;font-weight:700;color:var(--ink);text-decoration:none;
+  font-variation-settings:"wdth" 112;letter-spacing:-.015em}
+.brand svg{width:34px;height:22px;margin-top:-2px}
+.views{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
+.views .main{border:1.5px solid var(--ink);background:none;border-radius:6px;padding:6px 14px;font-weight:600;cursor:pointer;
+  font-variation-settings:"wdth" 90}
+.views .main[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.views .sep{font-size:13px;color:var(--muted)}
+.theme{margin-left:12px;width:38px;height:38px;border:1px solid var(--rule);background:var(--panel);border-radius:50%;cursor:pointer;
+  display:grid;place-items:center;color:var(--ink);flex:none}
+.theme svg{width:18px;height:18px}
+body.city-mode .runs{display:none}
+body.city-mode .theme{margin-left:auto}
+@media (max-width:900px){.views .sep{flex-basis:100%;margin-bottom:-4px}.theme{position:absolute;right:12px;top:12px}.top{position:relative}
+  .views .models button{padding:6px 11px}}
+@media (max-width:420px){.views .models button{padding:6px 8px;font-size:14px}}
 @media (max-width:1100px){.charts{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header class="top">
-  <h1>Carte meteo</h1>
-  <nav class="models" aria-label="Sezione" id="views">
-    <button data-view="carte" aria-pressed="true">Carte</button>
-    <button data-view="confronto" aria-pressed="false">Confronto</button>
-    <button data-view="ensemble" aria-pressed="false">Ensemble</button>
-    <button data-view="localita" aria-pressed="false">Località</button>
+  <a class="brand" href="#citta" id="brand" aria-label="Ventaglio: pagina iniziale"></a>
+  <nav class="views" aria-label="Sezioni" id="views">
+    <button class="main" data-view="citta" aria-pressed="true">La tua città</button>
+    <span class="sep">Per appassionati</span>
+    <div class="models">
+      <button data-view="carte" aria-pressed="false">Carte</button>
+      <button data-view="confronto" aria-pressed="false">Confronto</button>
+      <button data-view="ensemble" aria-pressed="false">Ensemble</button>
+      <button data-view="localita" aria-pressed="false">Località</button>
+    </div>
   </nav>
   <div class="runs" id="runs"></div>
+  <button class="theme" id="theme" type="button" aria-label="Cambia tema chiaro o scuro" title="Tema chiaro o scuro">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button>
 </header>
 
-<div class="layout" id="app">
+<main id="cityview" hidden></main>
+
+<div class="layout" id="app" hidden>
   <aside class="side" id="side"></aside>
 
   <main class="stage">
@@ -186,12 +248,15 @@ footer a{color:inherit}
 </div>
 
 <footer>
+  <a href="#come-funziona">Come funziona Ventaglio</a>.
   Dati GFS e GEFS: NOAA/NCEP. Dati ECMWF, AIFS ed ENS: <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF Open Data</a>,
   licenza <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Dati ICON-EU: Deutscher Wetterdienst (DWD), opendata.dwd.de.
-  Le carte e i grafici sono un'elaborazione di questo sito, non prodotti ufficiali degli enti. Contorni geografici: Natural Earth.
-  Gli orari dei modelli sono in UTC (ora italiana = UTC+1, UTC+2 con l'ora legale). Il sito controlla le nuove corse ogni mezz'ora e si aggiorna da solo.
+  Elenco dei comuni: dati ISTAT tramite Garda Informatica (licenza MIT).
+  Previsioni, carte e grafici sono un'elaborazione di questo sito, non prodotti ufficiali degli enti. Contorni geografici: Natural Earth.
+  Gli orari dei modelli sono in UTC (ora italiana = UTC+1, UTC+2 con l'ora legale). Il sito controlla le nuove corse ogni ora e si aggiorna da solo.
 </footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="citta.js"></script>
 
 <script>
 (() => {
@@ -200,8 +265,9 @@ const $ = (id) => document.getElementById(id);
 const H = 36e5;
 const COLORS = { gfs: "#0B4EA2", ecmwf: "#C8102E", aifs: "#7A3FB0", "icon-eu": "#16834A" };
 const ENS_DET = { gefs: "gfs", "ecmwf-ens": "ecmwf" };
-const S = { m: null, view: "carte", model: "gfs", a: "gfs", b: "ecmwf", ens: "gefs", product: "spaghetti",
+const S = { m: null, view: "citta", cityId: null, model: "gfs", a: "gfs", b: "ecmwf", ens: "gefs", product: "spaghetti",
             region: "italia", chart: "z500", valid: null, city: "ostuni", plume: "gefs", playing: false, timer: null };
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const cache = new Map();
 const json = new Map();
 let charts = [];
@@ -477,8 +543,18 @@ function fixState() {
 }
 function update() {
   stop();
+  for (const b of $("views").querySelectorAll("button[data-view]")) b.setAttribute("aria-pressed", b.dataset.view === S.view);
+  const city = S.view === "citta" || S.view === "info";
+  document.body.classList.toggle("city-mode", city);
+  $("cityview").hidden = !city;
+  $("app").hidden = city;
+  if (city) { showCity(); return; }
+  if (!S.m) {
+    $("app").innerHTML = `<div class="empty"><h2>Le carte non sono ancora pronte</h2>
+      <p>Il primo aggiornamento parte da solo all'arrivo di una nuova corsa e richiede circa un'ora. Ricarica la pagina più tardi.</p></div>`;
+    return;
+  }
   fixState();
-  for (const b of $("views").children) b.setAttribute("aria-pressed", b.dataset.view === S.view);
   renderSide();
   const loc = S.view === "localita";
   $("mapview").classList.toggle("hidden", loc);
@@ -591,10 +667,12 @@ function axisOpts(times) {
     ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 },
       callback: (v, i) => { const d = new Date(times[i]); const h = d.getUTCHours();
         return h === 0 ? fTick.format(d) : h === 12 && times.length < 50 ? "12Z" : ""; } },
-    grid: { color: (c) => (c.index != null && new Date(times[c.index]).getUTCHours() === 0 ? "#B7C3CC" : "rgba(0,0,0,0)") },
+    grid: { color: (c) => (c.index != null && new Date(times[c.index]).getUTCHours() === 0 ? css("--rule-strong") : "rgba(0,0,0,0)") },
   };
 }
 function mkChart(Chart, box, type, times, datasets, yTitle, extra = {}) {
+  Chart.defaults.color = css("--muted");
+  Chart.defaults.borderColor = css("--rule");
   const c = new Chart(box, {
     type, data: { labels: times.map((t) => `${fTick.format(new Date(t))} ${hh(t)}Z`), datasets },
     options: Object.assign({
@@ -674,8 +752,9 @@ async function showLoc() {
       const vals = mem.map((m) => m[j]).filter((x) => x != null);
       return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
     });
-    const ds = mem.map((m, i) => ({ label: `membro ${i + 1}`, data: m, borderColor: "rgba(90,106,121,.32)", borderWidth: 1, type: "line" }));
-    ds.push({ label: "media", data: mean, borderColor: "#13283D", backgroundColor: "#13283D", borderWidth: 2.6, type: "line" });
+    const ink = css("--ink");
+    const ds = mem.map((m, i) => ({ label: `membro ${i + 1}`, data: m, borderColor: css("--rule-strong") + "80", borderWidth: 1, type: "line" }));
+    ds.push({ label: "media", data: mean, borderColor: ink, backgroundColor: ink, borderWidth: 2.6, type: "line" });
     if (dIdx >= 0 && det[dIdx]) {
       const m = new Map(det[dIdx].valid.map((t, i) => [Date.parse(t), det[dIdx].cities[city.id]?.[v]?.[i]]));
       ds.push({ label: `${S.m.models[ids[dIdx]].short} (deterministico)`, data: et.map((t) => m.get(t) ?? null),
@@ -685,15 +764,30 @@ async function showLoc() {
   };
   $("locCharts").append(el("h3", { class: "section-title" }, `Pennacchio ${E.short}`,));
   $("locCharts").lastChild.append(el("small", {}, `${ens.members} membri, corsa ${runLabel(Date.parse(E.run))}`));
-  plume("t850", "°C", "Temperatura a 850 hPa", "ogni linea grigia è un membro");
+  plume("t2m", "°C", "Temperatura a 2 metri", "ogni linea grigia è un membro");
+  plume("t850", "°C", "Temperatura a 850 hPa");
   plume("tp6", "mm", "Precipitazioni", "nelle 6 ore precedenti, per membro");
   plume("mslp", "hPa", "Pressione al livello del mare");
   plume("z500", "dam", "Geopotenziale a 500 hPa");
 }
 
+// ---------- la tua città ----------
+async function showCity() {
+  const view = S.view;
+  if (view === "info") Citta.info();
+  else if (S.cityId) { if (!(await Citta.open(S.cityId))) { S.cityId = null; await Citta.home(); } }
+  else await Citta.home();
+  if (S.view === view) writeHash();
+}
+
 // ---------- indirizzo condivisibile ----------
 function writeHash() {
   let h;
+  if (S.view === "citta" || S.view === "info") {
+    h = S.view === "info" ? "#come-funziona" : S.cityId ? `#citta/${S.cityId}` : "#citta";
+    if (location.hash !== h) history.replaceState(null, "", h);
+    return;
+  }
   const tl = S.view !== "localita" ? timeline().find((x) => x.valid === S.valid) : null;
   const lead = tl ? tl.lead : 0;
   if (S.view === "carte") h = `#carte/${S.model}/${S.region}/${S.chart}/${lead}`;
@@ -704,7 +798,10 @@ function writeHash() {
 }
 function readHash() {
   const parts = decodeURIComponent(location.hash.slice(1)).split("/").filter(Boolean);
-  if (!parts.length) return;
+  if (!parts.length) { S.view = "citta"; S.cityId = Citta.remembered() || null; return; }
+  if (parts[0] === "citta") { S.view = "citta"; S.cityId = parts[1] || null; return; }
+  if (parts[0] === "come-funziona") { S.view = "info"; return; }
+  if (!S.m) { S.view = parts[0]; return; }
   let lead;
   if (S.m.models[parts[0]] || parts[0] === "gfs" || parts[0] === "ecmwf") {  // vecchi link: #gfs/italia/z500/48
     S.view = "carte"; [S.model, S.region, S.chart, lead] = parts;
@@ -731,48 +828,64 @@ function toast(msg) {
 
 // ---------- avvio e aggiornamento automatico ----------
 async function refresh() {
+  if (S.view === "citta") Citta.refresh().then((changed) => { if (changed) toast("Previsione aggiornata con le ultime corse"); });
   try {
     const m = await fetchManifest();
-    if (!S.m || m.generated === S.m.generated) { renderRuns(); return; }
+    window.VENTAGLIO_MANIFEST = m;
+    if (!S.m) { S.m = m; if (!$("app").hidden) location.reload(); return; }
+    if (m.generated === S.m.generated) { renderRuns(); return; }
     const all = (x) => ({ ...x.models, ...x.ensembles });
     const news = Object.keys(all(m)).filter((id) => !all(S.m)[id] || all(m)[id].run !== all(S.m)[id].run);
     const lead = S.valid != null ? (S.valid - baseRun()) / H : null;
     S.m = m;
     json.clear();
     if (lead != null) S.valid = baseRun() + lead * H;
-    update(); renderRuns();
+    renderRuns();
+    if (S.view === "citta" || S.view === "info") return;
+    update();
     if (news.length) toast("Nuova corsa arrivata: " + news.map((id) => `${all(m)[id].short} ${hh(Date.parse(all(m)[id].run))}Z`).join(", "));
   } catch (e) { /* riprova al prossimo giro */ }
 }
 async function start() {
+  $("brand").innerHTML = Citta.fan("aperto", 34) + "Ventaglio";
+  Citta.init($("cityview"), (id) => { location.hash = `#citta/${id}`; });
   try {
     S.m = await fetchManifest();
-  } catch (e) {
-    $("app").innerHTML = `<div class="empty"><h2>Le carte non sono ancora pronte</h2>
-      <p>Il primo aggiornamento parte da solo entro mezz'ora dall'attivazione del sito e richiede circa 20 minuti.
-      Ricarica la pagina più tardi.</p></div>`;
-    return;
-  }
+    window.VENTAGLIO_MANIFEST = S.m;
+  } catch (e) { S.m = null; }
   readHash();
-  update(); renderRuns();
+  update();
+  if (S.m) renderRuns();
   setInterval(refresh, 5 * 60 * 1000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 }
 
 $("views").addEventListener("click", (e) => {
-  const b = e.target.closest("button"); if (!b) return;
-  S.view = b.dataset.view; update();
+  const b = e.target.closest("button[data-view]"); if (!b) return;
+  S.view = b.dataset.view;
+  if (S.view === "citta") S.cityId = S.cityId || Citta.remembered() || null;
+  update();
+});
+$("theme").addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = dark ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("ventaglio.tema", JSON.stringify(next)); } catch (e) { /* niente memoria: va bene lo stesso */ }
+  if (S.view === "localita") showLoc();
+  if (S.view === "citta" && !$("cityview").hidden) window.dispatchEvent(new Event("resize"));
 });
 $("prev").onclick = () => { stop(); step(-1); };
 $("next").onclick = () => { stop(); step(1); };
 $("play").onclick = () => (S.playing ? stop() : play());
 document.addEventListener("keydown", (e) => {
-  if (S.view === "localita" || e.target.closest("select,input,textarea") || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (["localita", "citta", "info"].includes(S.view) || e.target.closest("select,input,textarea") || e.altKey || e.ctrlKey || e.metaKey) return;
   if (e.key === "ArrowRight") { e.preventDefault(); stop(); step(1); }
   else if (e.key === "ArrowLeft") { e.preventDefault(); stop(); step(-1); }
   else if (e.key === " " && !e.target.closest("button")) { e.preventDefault(); S.playing ? stop() : play(); }
 });
-window.addEventListener("hashchange", () => { if (!S.m) return; readHash(); update(); });
+window.addEventListener("hashchange", () => { readHash(); update(); if (S.view === "citta" || S.view === "info") window.scrollTo(0, 0); });
 start();
 })();
 </script>

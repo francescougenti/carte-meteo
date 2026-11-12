@@ -10,11 +10,12 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolE
 import numpy as np
 
 from . import config as C
-from . import grib, points
+from . import grib, luoghi, points
 from .sources import fetch, log
 
 COARSE = 1.0  # risoluzione delle carte dell'ensemble (gradi): basta per le isoipse
-VARS = ("z500", "t850", "mslp", "tp6")
+VARS = ("z500", "t850", "mslp", "tp6", "t2m")
+PLACE_VARS = ("t2m", "tp6")  # per la previsione "La tua città"
 
 
 def _download(plan, threads=16):
@@ -42,9 +43,11 @@ def generate(model, run, public, work, workers, only_steps=None):
     os.makedirs(wdir)
     info = dict(id=model.id, short=model.chart_label, credit=model.credit)
     series = {v: np.full((len(C.CITIES), nm, len(steps)), np.nan, np.float32) for v in VARS}
-    prev_tot = [None] * nm
+    places = luoghi.active()
+    pseries = {v: np.full((len(places), nm, len(steps)), np.nan, np.float32) for v in PLACE_VARS}
+    prev_tot, prev_ptot = [None] * nm, [None] * nm
     results, t0 = {}, time.time()
-    sampler = None
+    sampler = psampler = None
 
     def collect(done):
         for f in done:
@@ -77,12 +80,17 @@ def generate(model, run, public, work, workers, only_steps=None):
                 a = model.convert(key, a)
                 if sampler is None:
                     sampler = points.sampler(la, lo)
+                    psampler = points.sampler(la, lo, places)
                 if key == "tp_total":  # cumulata dall'inizio -> 6 ore
+                    cur, pcur = sampler(a), psampler(a)
                     if prev_tot[mi] is not None:
-                        series["tp6"][:, mi, si] = np.maximum(sampler(a) - prev_tot[mi], 0)
-                    prev_tot[mi] = sampler(a)
+                        series["tp6"][:, mi, si] = np.maximum(cur - prev_tot[mi], 0)
+                        pseries["tp6"][:, mi, si] = np.maximum(pcur - prev_ptot[mi], 0)
+                    prev_tot[mi], prev_ptot[mi] = cur, pcur
                     continue
                 series[key][:, mi, si] = sampler(a)
+                if key in pseries:
+                    pseries[key][:, mi, si] = psampler(a)
                 if key == "z500":
                     s = max(1, int(round(COARSE / float(lo[1] - lo[0]))))
                     stack[mi] = a[::s, ::s]
@@ -106,6 +114,7 @@ def generate(model, run, public, work, workers, only_steps=None):
     shutil.rmtree(wdir, ignore_errors=True)
     valids = [(run.time + dt.timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ") for h in steps]
     points.write_ens(public, model, run.iso, steps, valids, series)
+    points.write_samples(public, model.id, run.iso, [p["id"] for p in places], steps, valids, pseries)
     return results, stage
 
 

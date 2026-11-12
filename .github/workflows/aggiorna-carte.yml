@@ -11,7 +11,7 @@ on:
         default: false
   push:
     branches: [main]
-    paths: ["site/**", "meteo/**", "assets/**", "requirements.txt", ".github/workflows/**"]
+    paths: ["site/**", "meteo/**", "assets/**", "requirements.txt", ".github/workflows/aggiorna-carte.yml"]
 
 permissions:
   contents: write   # solo per il commit che tiene attivo il controllo automatico
@@ -99,6 +99,8 @@ jobs:
 
       - name: Genera le carte delle corse nuove
         id: build
+        env:
+          METEO_SITE_URL: ${{ needs.controlla.outputs.sito }}   # per recuperare lo storico se la cache è persa
         run: python -m meteo.build --public public --workers "$(nproc)" ${{ inputs.forza && '--force' || '' }}
 
       - name: Copia le pagine del sito
@@ -107,7 +109,6 @@ jobs:
           cp -r site/. public/
           if [ -f public/data/manifest.json ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; fi
           du -sh public
-          find public -name '*.png' | wc -l
 
       - name: Salva le carte per il prossimo giro
         if: steps.build.outputs.updated == 'true'

@@ -73,8 +73,14 @@ def atmosphere(lon1d, valid_h, seed, lat1d=LAT):
         t2m=t2m, rh850=np.clip(rh + 8, 0, 100), rh700=rh, u10=u10, v10=v10, u250=u250, v250=v250,
         gust=np.hypot(u10, v10) * 1.6 + 2, cape=np.clip((t2m - 288) * 120, 0, None) * (rh / 100) ** 2,
         tcc=np.clip(rh * 1.1 - 20, 0, 100), pwat=np.clip(4 + 0.45 * rh * np.exp((t850 - 273) / 14), 1, 70),
-        rate6=rate * 6,
+        rate6=rate * 6, orog=orography(lon, lat),
     )
+
+
+def orography(lon, lat):
+    """Rilievi inventati: Alpi e Appennino quanto basta per provare la correzione con la quota."""
+    return (2200 * blob(lon, lat, 10, 46.3, 1.2) + 900 * blob(lon, lat, 13.5, 42.2, 1.0)
+            + 700 * blob(lon, lat, 15.9, 40.5, 0.8) + 20)
 
 
 SAMPLE = eccodes.codes_grib_new_from_samples("regular_ll_sfc_grib2")
@@ -124,7 +130,11 @@ def write_gfs(run, steps):
                 ("PWAT", "entire atmosphere (considered as a single layer)", when, a["pwat"]),
                 ("SNOD", "surface", when, np.clip((2 - (a["t2m"] - 273.15)) * 0.05, 0, None)),
                 ("HGT", "0C isotherm", when, np.clip((a["t850"] - 273.15) * 150 + 1500, 0, None))]
+        if fh == 0:
+            recs.append(("HGT", "surface", when, a["orog"]))
         if fh > 0:
+            recs += [("TMAX", "2 m above ground", f"{fh - 6}-{fh} hour max fcst", a["t2m"] + 1.5),
+                     ("TMIN", "2 m above ground", f"{fh - 6}-{fh} hour min fcst", a["t2m"] - 1.5)]
             recs += [("TCDC", "entire atmosphere", f"{max(fh - 6, 0)}-{fh} hour ave fcst", a["tcc"] * 0.8),
                      ("TCDC", "entire atmosphere", when, a["tcc"]),
                      ("APCP", "surface", f"{fh - 6}-{fh} hour acc fcst", a["rate6"]),
@@ -158,6 +168,9 @@ def write_ecmwf(run, steps, top="ecmwf", path="ifs", aifs=False):
             recs += [("tcwv", "sfc", None, a["pwat"]), ("mucape", "sfc", None, a["cape"])]
         if st and not aifs:
             recs.append(("10fg", "sfc", None, a["gust"] * 1.05))
+            recs += [("mx2t6", "sfc", None, a["t2m"] + 1.2), ("mn2t6", "sfc", None, a["t2m"] - 1.2)]
+        if st == 0:
+            recs.append(("z", "sfc", None, a["orog"] * 9.80665))
         zl = {"1000": a["z1000"], "925": a["z1000"] + 680, "850": a["z1000"] + 1350, "700": a["z500"] - 2600,
               "600": a["z500"] - 1300, "500": a["z500"], "250": a["z250"]}
         for lev in ("1000", "925", "850", "700", "600", "500", "250"):
@@ -211,6 +224,14 @@ def write_icon(run, steps):
                  ("fi", "250"): a["z250"] * 9.80665, ("t", "850"): a["t850"], ("t", "500"): a["t500"],
                  ("relhum", "850"): a["rh850"], ("relhum", "700"): a["rh700"],
                  ("u", "250"): a["u250"], ("v", "250"): a["v250"]}
+        if st:
+            single.update(tmax_2m=a["t2m"] + 1.0, tmin_2m=a["t2m"] - 1.0)
+        else:
+            folder = os.path.join(OUT, "icon", hh, "hsurf")
+            os.makedirs(folder, exist_ok=True)
+            name = f"icon-eu_europe_regular-lat-lon_time-invariant_{stamp}_HSURF.grib2.bz2"
+            with open(os.path.join(folder, name), "wb") as f:
+                f.write(bz2.compress(encode(a["orog"], -23.5, lat1d=lat), 1))
         items = [(p, None, v) for p, v in single.items()] + [(p, lv, v) for (p, lv), v in press.items()]
         for p, lv, v in items:
             folder = os.path.join(OUT, "icon", hh, p)
@@ -234,7 +255,8 @@ def write_gefs(run, steps, members=31):
             a = atmosphere(lon + 4 * mi, run.hour + fh + mi, 3000 + mi * 7 + fh, lat1d=lat)
             when = "anl" if fh == 0 else f"{fh} hour fcst"
             recs = [("HGT", "500 mb", when, a["z500"] + 3 * mi), ("TMP", "850 mb", when, a["t850"] - 0.1 * mi),
-                    ("PRMSL", "mean sea level", when, a["mslp"])]
+                    ("PRMSL", "mean sea level", when, a["mslp"]),
+                    ("TMP", "2 m above ground", when, a["t2m"] + 0.2 * mi)]
             if fh:
                 recs.append(("APCP", "surface", f"{fh - 6}-{fh} hour acc fcst", a["rate6"]))
             path = os.path.join(folder, f"{mem}.t{hh}z.pgrb2a.0p50.f{fh:03d}")

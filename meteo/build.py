@@ -18,7 +18,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 import numpy as np
 
 from . import config as C
-from . import ensemble, grib, points
+from . import citta, ensemble, grib, luoghi, points, verifica
 from .sources import MODELS, UTC, download, log
 
 
@@ -110,6 +110,8 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
     results, prev_cum = {}, None
     t0 = time.time()
     rows, sampler = [], None
+    places = luoghi.active()
+    prows, psampler, orog = [], None, None
 
     def collect(done):
         for f in done:
@@ -137,7 +139,11 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
                 continue
             if sampler is None:
                 sampler = points.sampler(lats, lons)
+                psampler = points.sampler(lats, lons, places)
             rows.append((h, iso(run.time + dt.timedelta(hours=h)), points.det_values(arrays, sampler)))
+            if "orog" in arrays:
+                orog = psampler(arrays.pop("orog"))
+            prows.append((h, iso(run.time + dt.timedelta(hours=h)), points.place_values(arrays, psampler)))
             path = os.path.join(wdir, f"{h:03d}.npz")
             np.savez(path, _lats=lats, _lons=lons, **arrays)
             job = dict(npz=path, model=info, run=run.iso, h=h, out=stage, regions=regions, charts=charts)
@@ -151,7 +157,25 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
     shutil.rmtree(wdir, ignore_errors=True)
     if rows:
         points.write_det(public, model, run.iso, rows)
+    if prows:
+        keep_long_samples(public, model, run)
+        points.write_samples(public, model.id, run.iso, [p["id"] for p in places], [r[0] for r in prows],
+                             [r[1] for r in prows], points.det_series(prows, [p["id"] for p in places]), orog)
     return results, stage
+
+
+def keep_long_samples(public, model, run):
+    """ECMWF 06/18 arriva a +144 h: si tiene da parte la corsa precedente, che arriva a +240 h."""
+    path = os.path.join(public, "data", "campioni", f"{model.id}.npz")
+    if not os.path.exists(path):
+        return
+    try:
+        with np.load(path) as z:
+            old_reach = int(z["h"][-1]) if len(z["h"]) else 0
+    except Exception:
+        return
+    if max(model.steps(run)) < old_reach:
+        os.replace(path, path.replace(".npz", "-lungo.npz"))
 
 
 def finalize(model, run, public, stage, results, manifest, regions, charts):
@@ -191,6 +215,39 @@ def finalize(model, run, public, stage, results, manifest, regions, charts):
         schema=C.SCHEMA)
     if kept:
         log(f"  tenute {kept} scadenze lunghe della corsa precedente")
+
+
+def restore_state(public):
+    """Se la cache è andata persa, recupera dal sito pubblicato lo storico delle previsioni per città
+    e i dati raccolti per la verifica (altrimenti si ripartirebbe da zero)."""
+    site = os.environ.get("METEO_SITE_URL", "").rstrip("/")
+    if not site.startswith("https://"):
+        return
+    import urllib.request
+
+    def get(rel):
+        dst = os.path.join(public, rel)
+        if os.path.exists(dst):
+            return None
+        try:
+            with urllib.request.urlopen(f"{site}/{rel}", timeout=60) as r:
+                body = r.read()
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with open(dst, "wb") as f:
+                f.write(body)
+            return body
+        except Exception:
+            return None
+    got = 0
+    idx = get("data/citta/indice.json")
+    if idx:
+        got += 1
+        for p in json.loads(idx).get("luoghi", []):
+            got += get(f"data/citta/{p['id']}.json") is not None
+    for rel in ("data/verifica/previsioni.json", "data/verifica/osservazioni.json"):
+        got += get(rel) is not None
+    if got:
+        log(f"Recuperati dal sito pubblicato {got} file di storico e verifica")
 
 
 def gh_output(**kw):
@@ -251,6 +308,17 @@ def main(argv=None):
             traceback.print_exc()
     if updated:
         save_manifest(a.public, manifest)
+    city_index = os.path.join(a.public, "data", "citta", "indice.json")
+    if updated or a.force or not os.path.exists(city_index):
+        restore_state(a.public)
+        try:
+            t0 = time.time()
+            info = citta.build(a.public, log=log)
+            verifica.update(a.public, info, log=log)
+            log(f"Previsione per città e verifica: {time.time() - t0:.0f} s")
+        except Exception as e:
+            log(f"::warning::Previsione per città non aggiornata: {e}")
+            traceback.print_exc()
     size = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(a.public) for f in fs) / 1e6
     log(f"Spazio occupato dal sito: {size:.0f} MB")
     if size > 950:
