@@ -102,9 +102,21 @@ Si conserva al massimo un'istantanea ogni due ore e mezza, per 9 giorni.
 
 ## `data/verifica/previsioni.json`
 
-Massime e minime previste, per la verifica dei modelli (fase 3). Chiave `modello|AAAAMMGGHH` (solo corse delle 00 e 12 UTC):
-`{"luoghi": [id...], "giorni": [date da 1 a 5 giorni dopo], "min": [[valore per luogo] per giorno], "max": [...]}`.
+Massime e minime previste da ogni modello deterministico nel punto esatto delle stazioni aeroportuali e alla loro quota,
+per la verifica. Chiave `modello|AAAAMMGGHH` (corse delle 00 e 12 UTC):
+`{"luoghi": ["st-LIRF", ...], "giorni": [date da 1 a 5 giorni dopo], "min": [[valore per stazione] per giorno], "max": [...]}`.
+Le corse del primo giorno (12 novembre 2026) hanno come luoghi i capoluoghi invece delle stazioni e non entrano nella classifica.
 Si conservano 60 giorni.
+
+## `data/verifica/classifica.json`
+
+"IA contro fisica": confronto tra previsto e misurato negli ultimi `finestra` (30) giorni, solo corse delle 00 UTC.
+
+- `giorni`, `dal`, `al`: giorni verificati.
+- `italia` e `stazioni.<ICAO>.anticipo`: `{"1"|"3"|"5": {modello: {...}}}`, con anticipo in giorni. Per ogni modello:
+  `tipo` (`ia` o `fisico`), `n` (casi), `errore` (errore medio assoluto di massime e minime, °C), `errore_max`, `errore_min`,
+  `scarto` (errore medio con segno: positivo = previsto più caldo del vero), `vinti` e `gare` (casi in cui è stato il più vicino al vero, su quelli con almeno 3 modelli).
+- `stazioni.<ICAO>`: anche `nome`, `lat`, `lon`, `giorni`.
 
 ## `data/verifica/osservazioni.json`
 

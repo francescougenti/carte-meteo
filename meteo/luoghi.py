@@ -78,9 +78,30 @@ def cells():
     return out
 
 
-def sample_points():
-    """Tutti i punti in cui si leggono i modelli: luoghi attivi e zone."""
-    return active() + cells()
+_STATIONS = []
+
+
+def load_stations(public):
+    """Stazioni aeroportuali viste finora nei bollettini METAR (data/verifica/osservazioni.json):
+    i modelli deterministici si leggono anche lì, alla quota della stazione, per la verifica."""
+    global _STATIONS
+    try:
+        with open(os.path.join(public, "data", "verifica", "osservazioni.json"), encoding="utf-8") as f:
+            st = json.load(f).get("stazioni", {})
+    except Exception:
+        st = {}
+    _STATIONS = [dict(id=f"st-{icao}", icao=icao, name=v[0], lat=v[1], lon=v[2], alt=v[3])
+                 for icao, v in sorted(st.items()) if v[1] is not None and v[2] is not None]
+    return _STATIONS
+
+
+def stations():
+    return list(_STATIONS)
+
+
+def sample_points(with_stations=True):
+    """Tutti i punti in cui si leggono i modelli: luoghi attivi, zone e (per i deterministici) stazioni."""
+    return active() + cells() + (stations() if with_stations else [])
 
 
 def file_of():

@@ -63,7 +63,7 @@ def truth(p, t, shift=0.0, amp=1.0, second=0.5, tbias=0.0):
                 snow=max(0.0, (alt - fzl + 300) / 40) * min(1, wet * 3) if alt > fzl - 300 else 0.0)
 
 
-def write_run(run, places):
+def write_run(run, places, ens=True):
     ids = [p["id"] for p in places]
     rng = np.random.default_rng(int(run.timestamp()) // 3600)
     drift = np.random.default_rng(7)  # errore che cambia piano piano da una corsa all'altra
@@ -95,7 +95,7 @@ def write_run(run, places):
                 series.pop(n)
         points.write_samples(PUB, sid, run.strftime("%Y-%m-%dT%H:%M:%SZ"), ids, hs,
                              [v.strftime("%Y-%m-%dT%H:%M:%SZ") for v in valids], series, orog)
-    for sid, nm, every in (("gefs", 31, 6), ("ecmwf-ens", 50, 12)):
+    for sid, nm, every in ((("gefs", 31, 6), ("ecmwf-ens", 50, 12)) if ens else ()):
         er = run.replace(hour=(run.hour // every) * every)
         hs = list(range(0, 241, 6))
         valids = [er + dt.timedelta(hours=x) for x in hs]

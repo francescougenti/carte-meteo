@@ -43,7 +43,7 @@ def generate(model, run, public, work, workers, only_steps=None):
     os.makedirs(wdir)
     info = dict(id=model.id, short=model.chart_label, credit=model.credit)
     series = {v: np.full((len(C.CITIES), nm, len(steps)), np.nan, np.float32) for v in VARS}
-    places = luoghi.sample_points()
+    places = luoghi.sample_points(with_stations=False)
     pseries = {v: np.full((len(places), nm, len(steps)), np.nan, np.float32) for v in PLACE_VARS}
     prev_tot, prev_ptot = [None] * nm, [None] * nm
     results, t0 = {}, time.time()

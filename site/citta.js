@@ -450,6 +450,7 @@ function detail(data, today) {
         ${historyBlock(data, d)}
         <h3>Cosa dicono i modelli</h3>
         ${modelsBlock(d)}
+        <div id="rankBox">${rankBox(data)}</div>
         ${(d.perche || []).length ? "" : chartsLink(d)}
       </div>
     </div>
@@ -573,6 +574,7 @@ function cityPage(data) {
       ${search("Cerca un altro comune")}
     </header>
     ${nota ? `<p class="note">${esc(nota)}</p>` : ""}
+    ${navigator.onLine === false ? `<p class="note">Sei offline: questa è l'ultima previsione scaricata, aggiornata ${esc(whenText(up))}.</p>` : ""}
     ${hero(data, today)}
     ${changesBlock(note)}
     ${fanChart(data, today)}
@@ -612,9 +614,118 @@ function infoPage() {
     <h2>Il perché, con la carta</h2>
     <p>Per ogni giorno Ventaglio cerca la causa principale del tempo che farà: aria più fredda o più calda in arrivo (e da dove), una bassa pressione, l'alta pressione,
       aria instabile, vento forte, lo zero termico basso. Te la spiega in una frase e ti mostra la carta dei modelli che la fa vedere, la stessa che guardano gli appassionati.</p>
+    <h2>IA contro fisica</h2>
+    <p>Ogni giorno confrontiamo le massime e le minime previste da ciascun modello con quelle misurate negli aeroporti italiani, per capire chi ci prende di più:
+      il modello a intelligenza artificiale AIFS o i modelli fisici. <a href="#ia-contro-fisica">Guarda la classifica</a>.</p>
+    <h2>Sul telefono, come un'app</h2>
+    <p>Ventaglio si installa sulla schermata iniziale e si apre come un'app, anche con la connessione lenta: mostra l'ultima previsione scaricata.
+      Su Android e sui computer usa il pulsante "Installa" in alto, oppure il menu del browser. Su iPhone e iPad, in Safari: tocca Condividi, poi "Aggiungi alla schermata Home".</p>
     <h2>Fonti e licenze</h2>
     <p>ECMWF Open Data (IFS, AIFS, ENS), licenza CC BY 4.0. NOAA/NCEP (GFS, GEFS), pubblico dominio. Deutscher Wetterdienst (ICON-EU). Elenco dei comuni: dati ISTAT tramite Garda Informatica (licenza MIT).
       Quote dal modello digitale del terreno AWS Terrain Tiles. Previsioni e grafici sono un'elaborazione di questo sito, non prodotti ufficiali degli enti.</p>
+  </article>`;
+}
+
+// ---------- IA contro fisica ----------
+const SHORT = { ecmwf: "ECMWF IFS", aifs: "AIFS", gfs: "GFS", "icon-eu": "ICON-EU" };
+const LEADS = { 1: "a 1 giorno", 3: "a 3 giorni", 5: "a 5 giorni" };
+const MIN_DAYS = 7;
+async function loadRanking() {
+  if (!C.rank || Date.now() - C.rankAt > 30 * 60e3) {
+    C.rank = await getJSON(`data/verifica/classifica.json?u=${encodeURIComponent((C.index && C.index.aggiornato) || Date.now())}`);
+    C.rankAt = Date.now();
+  }
+  return C.rank;
+}
+const IT_NAMES = { Florence: "Firenze", Milan: "Milano", Naples: "Napoli", Rome: "Roma", Venice: "Venezia", Genoa: "Genova", Turin: "Torino", Forli: "Forlì" };
+const stationName = (n) => String(n || "").split(",")[0].replace(/\s+(Arpt|Airport|Intl|Island)\b/g, "").replace("/", " ").trim()
+  .replace(/^[A-Za-z]+/, (w) => IT_NAMES[w] || w);
+const dec = (v, nd = 1) => (v == null ? "–" : v.toFixed(nd).replace(".", ","));
+function nearestStation(cl, p, maxKm = 50) {
+  let best = null;
+  for (const [icao, st] of Object.entries(cl.stazioni || {})) {
+    if (st.lat == null) continue;
+    const d = km(p, st);
+    if (d <= maxKm && (!best || d < best.d)) best = { icao, st, d };
+  }
+  return best;
+}
+function readyDate(cl) {
+  const start = cl.dal || romeDate();
+  return fDayMonth.format(dateObj(addDays(start, 30)));
+}
+function sortedModels(t) {
+  return Object.entries(t || {}).sort((a, b) => a[1].errore - b[1].errore);
+}
+/** Riquadro nella pagina della città: chi ci prende di più alla stazione più vicina. */
+function rankBox(data) {
+  const cl = C.rank;
+  if (!cl) return `<h3>Chi ci prende di più</h3><p class="muted">…</p>`;
+  const near = nearestStation(cl, data);
+  const link = `<a href="#ia-contro-fisica${near ? "/" + near.icao : ""}">IA contro fisica</a>`;
+  if ((cl.giorni || 0) < MIN_DAYS) {
+    return `<h3>Chi ci prende di più</h3><p>Stiamo confrontando ogni giorno le previsioni dei modelli con le temperature misurate negli aeroporti.
+      La classifica sarà affidabile verso il ${esc(readyDate(cl))}. ${link}</p>`;
+  }
+  const where = near ? `alla stazione di ${esc(stationName(near.st.nome))} (${Math.round(near.d)} km)` : "in Italia";
+  const t = near ? near.st.anticipo?.["1"] : cl.italia?.["1"];
+  const rows = sortedModels(t);
+  if (!rows.length) return "";
+  const [bid, b] = rows[0];
+  const ai = t.aifs;
+  const aiTxt = bid === "aifs" ? "il modello a intelligenza artificiale batte i modelli fisici"
+    : ai ? `AIFS, l'intelligenza artificiale, sbaglia in media di ${dec(ai.errore)}°` : "";
+  return `<h3>Chi ci prende di più</h3><p>Negli ultimi ${near ? near.st.giorni : cl.giorni} giorni, ${where}, il più preciso con un giorno di anticipo è
+    <b>${SHORT[bid]}</b>: sbaglia massime e minime in media di ${dec(b.errore)}°${aiTxt ? `; ${aiTxt}` : ""}. ${link}</p>`;
+}
+function rankingPage(focus) {
+  const cl = C.rank;
+  const lead = String(C.lead || 1);
+  const n = Object.keys(cl.stazioni || {}).length;
+  const few = (cl.giorni || 0) < MIN_DAYS;
+  const status = few
+    ? `<p class="note">Raccolta in corso: ${cl.giorni || 0} ${cl.giorni === 1 ? "giorno verificato" : "giorni verificati"}. La classifica comincia a dire qualcosa dopo una settimana
+        e diventa affidabile dopo circa un mese, verso il ${esc(readyDate(cl))}. Fino ad allora i numeri qui sotto sono provvisori.</p>`
+    : `<p class="muted">Ultimi ${cl.giorni} giorni, dal ${esc(fDayMonth.format(dateObj(cl.dal)))} al ${esc(fDayMonth.format(dateObj(cl.al)))}.</p>`;
+  const tabs = Object.entries(LEADS).map(([k, v]) => `<button type="button" data-lead="${k}" aria-pressed="${k === lead}">${v}</button>`).join("");
+  const table = (t, big) => {
+    const rows = sortedModels(t);
+    if (!rows.length) return `<p class="muted">Ancora nessun giorno da confrontare.</p>`;
+    const worst = Math.max(...rows.map(([, m]) => m.errore), 0.1);
+    return `<ol class="rank${big ? " big" : ""}">${rows.map(([sid, m]) => {
+      const bias = Math.abs(m.scarto) >= 0.5 ? ` Tende a prevedere ${m.scarto > 0 ? "più caldo" : "più freddo"} del vero (in media ${dec(Math.abs(m.scarto))}°).` : "";
+      const win = m.gare ? ` Il più vicino al vero nel ${Math.round((100 * m.vinti) / m.gare)}% dei casi.` : "";
+      return `<li class="${m.tipo}"><span class="r-name">${SHORT[sid] || sid}<small>${m.tipo === "ia" ? "intelligenza artificiale" : "modello fisico"}</small></span>
+        <span class="r-bar"><i style="width:${Math.max(4, (100 * m.errore) / worst)}%"></i></span>
+        <span class="r-val">${dec(m.errore)}°</span>${big ? `<span class="r-note">${win}${bias}</span>` : ""}</li>`;
+    }).join("")}</ol>`;
+  };
+  const stations = Object.entries(cl.stazioni || {}).sort((a, b) => stationName(a[1].nome).localeCompare(stationName(b[1].nome), "it"));
+  const stRows = stations.map(([icao, st]) => {
+    const rows = sortedModels(st.anticipo?.[lead]);
+    if (!rows.length) return "";
+    const [bid, b] = rows[0];
+    const ai = st.anticipo[lead].aifs;
+    return `<tr id="st-${icao}"${icao === focus ? ' class="focus"' : ""}><th scope="row">${esc(stationName(st.nome))}</th><td class="n">${st.giorni}</td>
+      <td>${SHORT[bid]}${bid === "aifs" ? ' <span class="tag-ia">IA</span>' : ""}</td><td class="n">${dec(b.errore)}°</td><td class="n">${ai ? dec(ai.errore) + "°" : "–"}</td></tr>`;
+  }).join("");
+  return `<article class="info rankpage">
+    <h1>IA contro fisica</h1>
+    <p class="lede">AIFS, il modello a intelligenza artificiale del centro europeo ECMWF, contro tre modelli fisici tradizionali.
+      Ogni giorno confrontiamo le temperature massime e minime previste con quelle misurate in ${n} aeroporti italiani.</p>
+    ${status}
+    <div class="lead-tabs" role="group" aria-label="Anticipo della previsione">${tabs}</div>
+    <h2>Tutta Italia</h2>
+    <p class="muted">Errore medio di massime e minime: più corta è la barra, più il modello ci prende.</p>
+    ${table(cl.italia?.[lead], true)}
+    <h2>Aeroporto per aeroporto</h2>
+    <table class="models-t st-t"><thead><tr><th scope="col">Stazione</th><th scope="col" class="n">Giorni</th><th scope="col">Il più preciso</th>
+      <th scope="col" class="n">Errore</th><th scope="col" class="n">AIFS</th></tr></thead><tbody>${stRows}</tbody></table>
+    <h2>Come si calcola</h2>
+    <p>Le osservazioni sono i bollettini METAR degli aeroporti (NOAA Aviation Weather Center): massima e minima del giorno, in ore UTC, con almeno 18 misure.
+      Le previsioni sono quelle delle corse delle 00 UTC, lette nel punto esatto di ogni aeroporto e corrette per la sua quota, con 1, 3 o 5 giorni di anticipo
+      (ICON-EU arriva a 5 giorni solo in parte). L'errore è la media delle differenze, in valore assoluto, tra previsto e misurato.
+      Si contano solo gli ultimi ${cl.finestra} giorni, quindi la classifica cambia con le stagioni.</p>
   </article>`;
 }
 
@@ -708,6 +819,7 @@ window.Citta = {
     C.day = Math.min(C.day, data.giorni.length - 1);
     C.root.innerHTML = cityPage(data);
     wireCity(C.root);
+    loadRanking().then(() => { const box = C.root.querySelector("#rankBox"); if (box && C.data === data) box.innerHTML = rankBox(data); }).catch(() => {});
     store("citta", id);
     document.title = `${data.nome.split("/")[0]}: il meteo e quanto è sicuro – Ventaglio`;
     return true;
@@ -715,6 +827,19 @@ window.Citta = {
   info() {
     C.root.innerHTML = infoPage();
     document.title = "Come funziona – Ventaglio";
+  },
+  async ranking(focus) {
+    try { await loadIndex(); } catch (e) { /* l'indice serve solo per la data */ }
+    try { await loadRanking(); }
+    catch (e) { C.root.innerHTML = `<article class="info"><h1>IA contro fisica</h1><p class="note">La classifica non è ancora disponibile: arriva con il prossimo aggiornamento.</p></article>`; return; }
+    const draw = () => {
+      C.root.innerHTML = rankingPage(focus);
+      C.root.querySelectorAll("[data-lead]").forEach((b) => b.addEventListener("click", () => { C.lead = +b.dataset.lead; draw(); }));
+      const row = focus && C.root.querySelector(`#st-${focus}`);
+      if (row) row.scrollIntoView({ block: "center" });
+    };
+    draw();
+    document.title = "IA contro fisica – Ventaglio";
   },
   /** Ricarica se c'è un aggiornamento; restituisce true se la città è cambiata. */
   async refresh() {

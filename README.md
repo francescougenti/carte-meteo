@@ -21,7 +21,11 @@ Per ogni comune e per ogni giorno (i capoluoghi e Ostuni sono calcolati nel loro
   per ogni giorno negli ultimi giorni (lo storico è conservato nei dati del sito);
 - **il perché, con la carta**: la causa principale del tempo del giorno (aria fredda o calda in arrivo e da dove,
   bassa o alta pressione, instabilità, vento, zero termico) in una frase, con la carta dei modelli che la mostra;
-- quattro modelli a confronto.
+- quattro modelli a confronto e **IA contro fisica**: quale modello ha indovinato di più all'aeroporto più vicino.
+
+La pagina **IA contro fisica** confronta ogni giorno le massime e le minime previste da AIFS (intelligenza artificiale), ECMWF IFS,
+GFS e ICON-EU con quelle misurate in circa 40 aeroporti italiani (METAR), con 1, 3 e 5 giorni di anticipo.
+Il sito si installa sul telefono come un'app (manifest e service worker) e mostra l'ultima previsione anche offline.
 
 I file dei dati sono descritti in [docs/formato-dati.md](docs/formato-dati.md). Il sito raccoglie da subito anche le
 previsioni dei modelli e le temperature osservate negli aeroporti (METAR), per confrontare nei prossimi mesi

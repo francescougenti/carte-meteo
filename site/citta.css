@@ -181,3 +181,27 @@
 .why-map figcaption{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.4}
 .c-head .zone{margin:6px 0 0;font-size:13.5px;color:var(--muted);max-width:60ch}
 .d-col>h3:first-child{margin-top:16px!important}
+
+/* ---------- IA contro fisica ---------- */
+.rankpage{max-width:780px}
+.lead-tabs{display:inline-flex;border:1.5px solid var(--ink);border-radius:8px;overflow:hidden;margin:14px 0 4px}
+.lead-tabs button{border:0;background:var(--panel);color:var(--ink);padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
+.lead-tabs button+button{border-left:1.5px solid var(--ink)}
+.lead-tabs button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.rank{list-style:none;margin:10px 0 6px;padding:0;display:grid;gap:8px}
+.rank li{display:grid;grid-template-columns:minmax(120px,190px) 1fr 54px;gap:4px 12px;align-items:center;background:var(--panel);
+  border:1px solid var(--rule);border-radius:8px;padding:10px 14px}
+.r-name{font-weight:700;line-height:1.15}
+.r-name small{display:block;font-weight:400;color:var(--muted);font-size:12.5px}
+.r-bar{height:12px;background:var(--tint);border-radius:6px;overflow:hidden}
+.r-bar i{display:block;height:100%;background:var(--muted);border-radius:6px}
+.rank li.ia .r-bar i{background:var(--alta)}
+.rank li.ia .r-name{color:var(--alta)}
+.r-val{font-weight:700;font-size:18px;text-align:right;font-variation-settings:"wdth" 80}
+.r-note{grid-column:1/-1;font-size:13.5px;color:var(--muted)}
+.r-note:empty{display:none}
+.tag-ia{font-size:11.5px;font-weight:700;color:var(--alta);border:1px solid var(--alta);border-radius:4px;padding:0 4px;margin-left:4px}
+.st-t{max-width:none;margin-top:8px}
+.st-t tr.focus{background:var(--sel)}
+#rankBox h3{margin-top:22px!important}
+@media (max-width:600px){.rank li{grid-template-columns:1fr 48px}.r-bar{grid-column:1/-1;grid-row:2}.lead-tabs button{padding:8px 10px}}

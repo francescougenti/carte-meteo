@@ -275,6 +275,7 @@ def main(argv=None):
     only = [int(s) for s in a.steps.split(",")] if a.steps else None
     manifest = load_manifest(a.public)
     updated, errors = [], []
+    luoghi.load_stations(a.public)  # punti di verifica: gli aeroporti visti finora nei METAR
     for mid in (a.models.split(",") if a.models else list(MODELS)):
         model = MODELS[mid]
         group = "ensembles" if model.kind == "ens" else "models"

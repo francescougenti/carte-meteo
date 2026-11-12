@@ -16,6 +16,9 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="icona.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icona-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ventaglio">
 <script>try{var t=JSON.parse(localStorage.getItem("ventaglio.tema"));if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -187,6 +190,11 @@ footer a{color:inherit}
   display:grid;place-items:center;color:var(--ink);flex:none}
 .theme svg{width:18px;height:18px}
 body.city-mode .runs{display:none}
+.install{margin-left:auto;border:1.5px solid var(--ink);background:var(--panel);color:var(--ink);border-radius:18px;padding:6px 14px;
+  font-weight:600;cursor:pointer;flex:none}
+.install+.theme{margin-left:8px!important}
+@media (max-width:900px){.install{position:absolute;right:58px;top:12px;padding:6px 12px}}
+@media (max-width:600px){.install{display:none}}
 body.city-mode .theme{margin-left:auto}
 @media (max-width:900px){.views .sep{flex-basis:100%;margin-bottom:-4px}.theme{position:absolute;right:12px;top:12px}.top{position:relative}
   .views .models button{padding:6px 11px}}
@@ -213,6 +221,7 @@ body.city-mode .theme{margin-left:auto}
     </div>
   </nav>
   <div class="runs" id="runs"></div>
+  <button class="install" id="install" type="button" hidden>Installa</button>
   <button class="theme" id="theme" type="button" aria-label="Cambia tema chiaro o scuro" title="Tema chiaro o scuro">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button>
 </header>
@@ -253,7 +262,7 @@ body.city-mode .theme{margin-left:auto}
 </div>
 
 <footer>
-  <a href="#come-funziona">Come funziona Ventaglio</a>.
+  <a href="#come-funziona">Come funziona Ventaglio</a>. <a href="#ia-contro-fisica">IA contro fisica</a>.
   Dati GFS e GEFS: NOAA/NCEP. Dati ECMWF, AIFS ed ENS: <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF Open Data</a>,
   licenza <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Dati ICON-EU: Deutscher Wetterdienst (DWD), opendata.dwd.de.
   Elenco dei comuni: dati ISTAT tramite Garda Informatica (licenza MIT).
@@ -270,7 +279,8 @@ const $ = (id) => document.getElementById(id);
 const H = 36e5;
 const COLORS = { gfs: "#0B4EA2", ecmwf: "#C8102E", aifs: "#7A3FB0", "icon-eu": "#16834A" };
 const ENS_DET = { gefs: "gfs", "ecmwf-ens": "ecmwf" };
-const S = { m: null, view: "citta", cityId: null, model: "gfs", a: "gfs", b: "ecmwf", ens: "gefs", product: "spaghetti",
+const CITY_VIEWS = ["citta", "info", "ia"];
+const S = { m: null, view: "citta", cityId: null, station: null, model: "gfs", a: "gfs", b: "ecmwf", ens: "gefs", product: "spaghetti",
             region: "italia", chart: "z500", valid: null, city: "ostuni", plume: "gefs", playing: false, timer: null };
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const cache = new Map();
@@ -549,7 +559,7 @@ function fixState() {
 function update() {
   stop();
   for (const b of $("views").querySelectorAll("button[data-view]")) b.setAttribute("aria-pressed", b.dataset.view === S.view);
-  const city = S.view === "citta" || S.view === "info";
+  const city = CITY_VIEWS.includes(S.view);
   document.body.classList.toggle("city-mode", city);
   $("cityview").hidden = !city;
   $("app").hidden = city;
@@ -780,6 +790,7 @@ async function showLoc() {
 async function showCity() {
   const view = S.view;
   if (view === "info") Citta.info();
+  else if (view === "ia") await Citta.ranking(S.station);
   else if (S.cityId) { if (!(await Citta.open(S.cityId))) { S.cityId = null; await Citta.home(); } }
   else await Citta.home();
   if (S.view === view) writeHash();
@@ -788,8 +799,9 @@ async function showCity() {
 // ---------- indirizzo condivisibile ----------
 function writeHash() {
   let h;
-  if (S.view === "citta" || S.view === "info") {
-    h = S.view === "info" ? "#come-funziona" : S.cityId ? `#citta/${S.cityId}` : "#citta";
+  if (CITY_VIEWS.includes(S.view)) {
+    h = S.view === "info" ? "#come-funziona" : S.view === "ia" ? `#ia-contro-fisica${S.station ? "/" + S.station : ""}`
+      : S.cityId ? `#citta/${S.cityId}` : "#citta";
     if (location.hash !== h) history.replaceState(null, "", h);
     return;
   }
@@ -806,6 +818,7 @@ function readHash() {
   if (!parts.length) { S.view = "citta"; S.cityId = Citta.remembered() || null; return; }
   if (parts[0] === "citta") { S.view = "citta"; S.cityId = parts[1] || null; return; }
   if (parts[0] === "come-funziona") { S.view = "info"; return; }
+  if (parts[0] === "ia-contro-fisica") { S.view = "ia"; S.station = parts[1] || null; return; }
   if (!S.m) { S.view = parts[0]; return; }
   let lead;
   if (S.m.models[parts[0]] || parts[0] === "gfs" || parts[0] === "ecmwf") {  // vecchi link: #gfs/italia/z500/48
@@ -846,7 +859,7 @@ async function refresh() {
     json.clear();
     if (lead != null) S.valid = baseRun() + lead * H;
     renderRuns();
-    if (S.view === "citta" || S.view === "info") return;
+    if (CITY_VIEWS.includes(S.view)) return;
     update();
     if (news.length) toast("Nuova corsa arrivata: " + news.map((id) => `${all(m)[id].short} ${hh(Date.parse(all(m)[id].run))}Z`).join(", "));
   } catch (e) { /* riprova al prossimo giro */ }
@@ -871,6 +884,23 @@ $("views").addEventListener("click", (e) => {
   if (S.view === "citta") S.cityId = S.cityId || Citta.remembered() || null;
   update();
 });
+// ---------- app installabile ----------
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => { /* senza: il sito va lo stesso */ }));
+}
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; $("install").hidden = false; });
+window.addEventListener("appinstalled", () => { $("install").hidden = true; installEvt = null; toast("Ventaglio è installato"); });
+$("install").addEventListener("click", async () => {
+  if (!installEvt) return;
+  installEvt.prompt();
+  await installEvt.userChoice.catch(() => null);
+  installEvt = null;
+  $("install").hidden = true;
+});
+window.addEventListener("online", () => { if (CITY_VIEWS.includes(S.view)) update(); });
+window.addEventListener("offline", () => toast("Sei offline: vedi l'ultima previsione scaricata"));
+
 $("theme").addEventListener("click", () => {
   const dark = document.documentElement.dataset.theme
     ? document.documentElement.dataset.theme === "dark"
@@ -885,12 +915,12 @@ $("prev").onclick = () => { stop(); step(-1); };
 $("next").onclick = () => { stop(); step(1); };
 $("play").onclick = () => (S.playing ? stop() : play());
 document.addEventListener("keydown", (e) => {
-  if (["localita", "citta", "info"].includes(S.view) || e.target.closest("select,input,textarea") || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (["localita", ...CITY_VIEWS].includes(S.view) || e.target.closest("select,input,textarea") || e.altKey || e.ctrlKey || e.metaKey) return;
   if (e.key === "ArrowRight") { e.preventDefault(); stop(); step(1); }
   else if (e.key === "ArrowLeft") { e.preventDefault(); stop(); step(-1); }
   else if (e.key === " " && !e.target.closest("button")) { e.preventDefault(); S.playing ? stop() : play(); }
 });
-window.addEventListener("hashchange", () => { readHash(); update(); if (S.view === "citta" || S.view === "info") window.scrollTo(0, 0); });
+window.addEventListener("hashchange", () => { readHash(); update(); if (CITY_VIEWS.includes(S.view)) window.scrollTo(0, 0); });
 start();
 })();
 </script>
