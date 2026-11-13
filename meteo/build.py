@@ -18,7 +18,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 import numpy as np
 
 from . import config as C
-from . import allerte, citta, ensemble, grib, luoghi, orario, points, verifica
+from . import allerte, citta, ensemble, grib, luoghi, mare, orario, points, sci, stazioni, verifica
 from .sources import MODELS, UTC, download, log
 
 
@@ -161,6 +161,11 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
         orario.write(public, model, run, luoghi.active() + luoghi.cells(), log=log)
     except Exception as e:
         log(f"::warning::{model.id}: dati ora per ora non aggiornati: {e}")
+    if model.id == "ecmwf":
+        try:  # onde davanti ai comuni costieri, dal modello d'onda della stessa corsa
+            mare.write(public, model, run, log=log)
+        except Exception as e:
+            log(f"::warning::Mare non aggiornato: {e}")
     if prows:
         keep_long_samples(public, model, run)
         points.write_samples(public, model.id, run.iso, [p["id"] for p in places], [r[0] for r in prows],
@@ -327,6 +332,14 @@ def main(argv=None):
         allerte.update(a.public, log=log)
     except Exception as e:
         log(f"::warning::Allerte della Protezione Civile non aggiornate: {e}")
+    try:
+        sci.update(a.public, log=log)
+    except Exception as e:
+        log(f"::warning::Piste da sci non aggiornate: {e}")
+    try:
+        stazioni.update(a.public, log=log)
+    except Exception as e:
+        log(f"::warning::Centraline MeteoNetwork non aggiornate: {e}")
     size = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(a.public) for f in fs) / 1e6
     log(f"Spazio occupato dal sito: {size:.0f} MB")
     if size > 950:

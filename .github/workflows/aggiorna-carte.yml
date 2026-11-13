@@ -101,6 +101,7 @@ jobs:
         id: build
         env:
           METEO_SITE_URL: ${{ needs.controlla.outputs.sito }}   # per recuperare lo storico se la cache è persa
+          MNW_TOKEN: ${{ secrets.MNW_TOKEN }}                    # centraline MeteoNetwork (vuoto = spente)
         run: python -m meteo.build --public public --workers "$(nproc)" ${{ inputs.forza && '--force' || '' }}
 
       - name: Copia le pagine del sito

@@ -16,6 +16,10 @@ const SURE = { deciso: "previsione sicura", quasi: "abbastanza sicura", aperto: 
 const MOTTO = "Ventaglio chiuso, con il tempo stai al sicuro.";
 const RISK = { idraulico: "rischio idraulico", temporali: "temporali", idrogeologico: "rischio idrogeologico" };
 const LEVEL = ["", "gialla", "arancione", "rossa"];
+const DOUGLAS = ["calmo", "quasi calmo", "poco mosso", "mosso", "molto mosso", "agitato", "molto agitato", "grosso", "molto grosso", "tempestoso"];
+const AVALANCHE = ["", "debole", "moderato", "marcato", "forte", "molto forte"];
+// chiave gratuita della Webcams API di Windy (pubblica: viaggia in ogni richiesta). Vuota = webcam spente.
+const WINDY_KEY = "";
 const FASCE = ["Notte", "Mattina", "Pomeriggio", "Sera"];
 
 const C = { index: null, comuni: null, data: null, day: 0, root: null, go: null, loading: null, alerts: null, more: false };
@@ -199,6 +203,140 @@ function stateLine(d, today, size = 34) {
   return `<p class="state s-${st}">${fan(st, size)}<span><b>${STATE[st]}</b>: ${SURE[st]}.${more ? ` <span class="more-t">${esc(more)}</span>` : ""}</span></p>`;
 }
 
+// ---------- mare ----------
+const fromDir = (deg) => (deg == null ? "" : `da ${CARD[Math.round(((deg % 360) + 360) % 360 / 45) % 8]}`);
+const mText = (v) => `${v.toFixed(1).replace(".", ",")} m`;
+/** "mosso, onde 0,6–1,2 m da sud-est" */
+function seaText(m, short) {
+  if (!m || m.stato == null) return "";
+  const waves = m.max < 0.15 ? "" : m.max - m.min >= 0.3 ? `onde ${mText(m.min).replace(" m", "")}–${mText(m.max)}` : `onde fino a ${mText(m.max)}`;
+  if (short) return `Mare ${DOUGLAS[m.stato]}${waves ? ", " + waves : ""}`;
+  return [DOUGLAS[m.stato], waves, waves ? fromDir(m.dir) : ""].filter(Boolean).join(", ").replace(/, (da )/, " $1");
+}
+const WAVE = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" class="wave"><path d="M2 9c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2M2 15c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2"/></svg>`;
+
+// ---------- montagna e sci ----------
+async function loadSki() {
+  if (C.ski === undefined || Date.now() - C.skiAt > 30 * 60e3) {
+    try { C.ski = await getJSON(`data/sci.json?u=${encodeURIComponent((C.index && C.index.aggiornato) || Date.now())}`); }
+    catch (e) { C.ski = C.ski || null; }
+    C.skiAt = Date.now();
+  }
+  return C.ski;
+}
+const nearSki = (p, maxKm = 25) => (C.ski ? C.ski.comprensori.map((r) => ({ r, d: km(p, r) })).filter((x) => x.d <= maxKm).sort((a, b) => a.d - b.d) : []);
+const isMountain = (data) => (data.alt != null && data.alt >= 700) || nearSki(data).length > 0;
+const SKI_STATE = { open: "Aperto", closed: "Chiuso", no_report: "Senza bollettino" };
+const cm = (v) => (v == null ? "–" : `${num(v)} cm`);
+function skiRow(r, extra = "") {
+  const parts = [];
+  if (r.impianti && r.impianti[1]) parts.push(`impianti ${r.impianti[0] ?? "–"} su ${r.impianti[1]}`);
+  if (r.km && r.km[1]) parts.push(`piste ${num(r.km[0] ?? 0)} km su ${num(r.km[1])}`);
+  else if (r.piste && r.piste[1]) parts.push(`piste ${r.piste[0] ?? "–"} su ${r.piste[1]}`);
+  const snow = r.neve || [];
+  const snowTxt = snow[0] != null || snow[1] != null
+    ? `neve ${snow[0] != null ? cm(snow[0]) + " a valle" : ""}${snow[0] != null && snow[1] != null ? ", " : ""}${snow[1] != null ? cm(snow[1]) + " in quota" : ""}${snow[2] ? `, ${cm(snow[2])} fresca` : ""}` : "";
+  return `<li class="ski s-${r.stato}">
+    <div class="sk-head"><b>${esc(r.nome)}</b><span class="sk-state">${SKI_STATE[r.stato] || r.stato}</span>${extra}</div>
+    <p>${esc([parts.join(", "), snowTxt].filter(Boolean).join(". ")) || "Nessun dato pubblicato dal comprensorio."}${r.valanghe ? ` <span class="sk-av av-${r.valanghe}">Valanghe: ${r.valanghe} ${AVALANCHE[r.valanghe]}</span>` : ""}</p>
+  </li>`;
+}
+/** Il riquadro "In montagna" del giorno scelto: neve prevista, zero termico, temperatura e vento in quota, piste vicine. */
+function mountainBlock(d, data) {
+  if (!isMountain(data)) return "";
+  const n = d.neve, q = d.quota, r = d.pioggia || {}, mm = r.mm || 0, p = r.p ?? 0;
+  const rows = [];
+  if (n) {
+    rows.push(["Zero termico", `${num(n.quota + 300)} m`]);
+    if (p >= 25 && mm >= 1) rows.push(["Quota neve", `circa ${num(n.quota)} m`]);
+  }
+  const here = ["neve", "pioggia-neve"].includes(d.codice) ? mm * (d.codice === "neve" ? 1 : 0.5) : 0;
+  if (here >= 1) rows.push([`Neve fresca a ${num(data.alt)} m`, `circa ${num(Math.round(here))} cm`]);
+  if (n && p >= 25 && mm >= 1 && n.quota <= 2000) rows.push(["Neve fresca a 2.000 m", `circa ${num(Math.max(1, Math.round(mm)))} cm`]);
+  if (q) {
+    rows.push(["A 1.500 m", `${deg(q.t1500)}`]);
+    if (q.vento != null) rows.push(["Vento in quota", `${num(q.vento)} km/h ${fromDir(q.dir)}`]);
+  }
+  const ski = nearSki(data).slice(0, 3);
+  const list = ski.length ? `<ul class="ski-list">${ski.map(({ r, d: dist }) => skiRow(r, `<span class="sk-km">${num(dist)} km</span>`)).join("")}</ul>` : "";
+  return `<div class="mountain"><div class="h-head"><h3>In montagna</h3><a href="#neve">Neve e piste in Italia</a></div>
+    <dl class="facts">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>${list}
+    ${ski.length ? `<p class="h-note">Piste e neve dai bollettini dei comprensori, raccolti da <a href="https://liftradar.eu" target="_blank" rel="noopener">LiftRadar</a>. La neve prevista è indicativa: circa 1 cm per ogni millimetro di pioggia.</p>`
+      : `<p class="h-note">La neve prevista è indicativa: circa 1 cm per ogni millimetro di pioggia.</p>`}</div>`;
+}
+function skiPage() {
+  const S = C.ski;
+  if (!S) return `<article class="info"><h1>Neve e piste</h1><p class="note">I dati dei comprensori non sono ancora disponibili: arrivano con il prossimo aggiornamento.</p></article>`;
+  const t = S.totale || {};
+  const byReg = new Map();
+  for (const r of S.comprensori) { const k = r.regione || "Altro"; if (!byReg.has(k)) byReg.set(k, []); byReg.get(k).push(r); }
+  const regs = [...byReg.keys()].sort((a, b) => a.localeCompare(b, "it"));
+  const lists = regs.map((g) => `<section class="ski-reg"><h2>${esc(g)}</h2><ul class="ski-list">${byReg.get(g)
+    .sort((a, b) => (a.stato === "open" ? 0 : 1) - (b.stato === "open" ? 0 : 1) || a.nome.localeCompare(b.nome, "it"))
+    .map((r) => skiRow(r, `<a class="sk-fc" href="#citta/${esc(r.comune)}">Previsione per ${esc(r.comune_nome)}</a>`)).join("")}</ul></section>`).join("");
+  const when = S.fonte_aggiornata ? whenText(Date.parse(S.fonte_aggiornata)) : "";
+  return `<article class="info skipage">
+    <h1>Neve e piste</h1>
+    <p class="lede">Oggi in Italia sono aperti <b>${t.aperti} comprensori su ${t.comprensori}</b>${t.impianti ? `, con ${num(t.impianti[0])} impianti su ${num(t.impianti[1])}` : ""}${t.km && t.km[1] ? ` e ${num(t.km[0])} km di piste su ${num(t.km[1])}` : ""}.</p>
+    <p class="muted">Dai bollettini dei comprensori e degli enti turistici, raccolti due volte al giorno da <a href="${esc(S.link)}" target="_blank" rel="noopener">LiftRadar</a>${when ? `; aggiornati ${esc(when)}` : ""}.
+      Mancano per ora Piemonte, Appennini e Sicilia. Il pericolo valanghe è quello dei bollettini AINEVA ed Euregio (1 debole, 5 molto forte).</p>
+    ${lists}
+  </article>`;
+}
+
+// ---------- centralina MeteoNetwork più vicina ----------
+async function loadStations() {
+  if (C.st === undefined || Date.now() - C.stAt > 10 * 60e3) {
+    try {
+      const raw = await getJSON(`data/stazioni.json?t=${Math.floor(Date.now() / 6e5)}`);
+      const F = Object.fromEntries(raw.campi.map((k, i) => [k, i]));
+      C.st = raw.stazioni.map((r) => Object.fromEntries(Object.entries(F).map(([k, i]) => [k, r[i]])));
+      C.stInfo = raw;
+    } catch (e) { C.st = C.st || null; }
+    C.stAt = Date.now();
+  }
+  return C.st;
+}
+function stationLine(data) {
+  if (!C.st || data.lat == null) return "";
+  let best = null;
+  for (const s of C.st) {
+    if (s.t == null) continue;
+    const d = km(data, s);
+    if (d > 12 || (data.alt != null && s.quota != null && Math.abs(data.alt - s.quota) > 250)) continue;
+    if (!best || d < best.d) best = { s, d };
+  }
+  if (!best) return "";
+  const s = best.s, t = Date.parse(s.ora.replace("Z", ":00Z"));
+  const bits = [`<b>${String(s.t.toFixed(1)).replace(".", ",")}°</b>`];
+  if (s.umidita != null) bits.push(`umidità ${num(s.umidita)}%`);
+  if (s.pioggia_oggi != null) bits.push(`pioggia oggi ${mmText(s.pioggia_oggi)}`);
+  if (s.vento != null) bits.push(`vento ${num(s.vento)} km/h`);
+  return `<p class="station">${STATION}<span>Misurato alle ${esc(fClock.format(new Date(t)))} dalla centralina di ${esc(s.luogo || s.codice)}
+    (${best.d < 1 ? "meno di 1 km" : num(best.d) + " km"}): ${bits.join(", ")}. <a href="https://www.meteonetwork.it/" target="_blank" rel="noopener">MeteoNetwork</a></span></p>`;
+}
+const STATION = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" class="st-i"><path d="M12 3v18M8 21h8M12 6h6M12 10h4"/><circle cx="12" cy="3.5" r="1.2"/></svg>`;
+
+// ---------- webcam di Windy ----------
+async function webcams(data) {
+  if (!WINDY_KEY || data.lat == null) return null;
+  const u = `https://api.windy.com/webcams/api/v3/webcams?nearby=${data.lat.toFixed(3)},${data.lon.toFixed(3)},30&include=images,location,urls&limit=4&lang=it`;
+  const r = await fetch(u, { headers: { "x-windy-api-key": WINDY_KEY } });
+  if (!r.ok) throw new Error(r.status);
+  return (await r.json()).webcams || [];
+}
+function camsBlock(list) {
+  if (!list || !list.length) return "";
+  const items = list.map((w) => {
+    const img = w.images?.current?.preview || w.images?.daylight?.preview;
+    const link = w.urls?.detail || `https://www.windy.com/webcams/${w.webcamId}`;
+    if (!img) return "";
+    return `<li><a href="${esc(link)}" target="_blank" rel="noopener"><img src="${esc(img)}" alt="${esc(w.title || "Webcam")}" loading="lazy"><span>${esc(w.title || w.location?.city || "Webcam")}</span></a></li>`;
+  }).join("");
+  if (!items) return "";
+  return `<section class="cams"><div class="h-head"><h3>Webcam vicine</h3><span class="sun">Webcam fornite da <a href="https://www.windy.com/webcams" target="_blank" rel="noopener">Windy.com</a>. <a href="https://www.windy.com/webcams/add" target="_blank" rel="noopener">Aggiungi una webcam</a></span></div><ul class="cam-grid">${items}</ul></section>`;
+}
+
 // ---------- allerte della Protezione Civile ----------
 async function loadAlerts() {
   if (C.alerts === null || Date.now() - C.alertsAt > 10 * 60e3) {
@@ -316,6 +454,7 @@ function hero(data, today) {
       <div class="now-main">${icon(d.codice, i ? 54 : 68)}<div class="temps"><span class="t-max" title="Massima">${deg(d.max)}</span><span class="t-min" title="Minima">${deg(d.min)}</span></div></div>
       <p class="sentence">${esc(daySentence(d))}</p>
       ${rain ? `<p class="rain-l${(d.pioggia?.p ?? 0) >= 50 ? " wet" : ""}">${DROP}<span>${esc(rain)}</span></p>` : ""}
+      ${d.mare && data.mare_km != null ? `<p class="sea-l">${WAVE}<span>${esc(seaText(d.mare, true))}</span></p>` : ""}
       ${stateLine(d, today, i ? 30 : 38)}
     </article>`;
   }).join("");
@@ -512,8 +651,9 @@ function hoursBlock(d, today) {
   const nowH = hourNow();
   const temps = rows.map((r) => r[1]).filter((v) => v != null);
   const lo = Math.min(...temps), hi = Math.max(...temps);
+  const waves = C.data && C.data.mare_km != null && rows.some((r) => r[9] != null);
   const cells = rows.map((r) => {
-    const [h, t, mm, , kmh, dir, code, night, st] = r;
+    const [h, t, mm, , kmh, dir, code, night, st, swh] = r;
     const rate = (mm || 0) / st;
     const lift = t == null || hi === lo ? 0 : ((t - lo) / (hi - lo)) * 14;
     const isNow = d.data === today && h === nowH;
@@ -523,13 +663,13 @@ function hoursBlock(d, today) {
       ${icon(code, 30, !!night)}
       <span class="h-t" style="transform:translateY(${(-lift).toFixed(1)}px)">${deg(t)}</span>
       <span class="h-r" title="${esc(mmText(mm))}"><i style="height:${Math.min(22, rate >= 0.1 ? 3 + (rate / 4) * 19 : 0).toFixed(1)}px"></i><small>${mm >= 0.1 ? mmText(mm).replace(" mm", "") : ""}</small></span>
-      ${wind}
+      ${wind}${waves ? `<span class="h-s" title="Onde ${swh == null ? "–" : mText(swh)}">${swh == null ? "" : swh.toFixed(1).replace(".", ",")}</span>` : ""}
     </li>`;
   }).join("");
   const sun = d.alba ? `<span class="sun">Alba ${d.alba.replace(/^0/, "")}, tramonto ${d.tramonto.replace(/^0/, "")}</span>` : "";
   return `<div class="hours"><div class="h-head"><h3>${step === 1 ? "Ora per ora" : "Ogni 3 ore"}</h3>${sun}</div>
-    <ol class="h-strip" aria-label="${step === 1 ? "Previsione ora per ora" : "Previsione ogni 3 ore"}">${cells}</ol>
-    <p class="h-note">Millimetri di pioggia ${step === 1 ? "nell'ora" : "nelle 3 ore"}, vento in km/h.</p></div>`;
+    <ol class="h-strip${waves ? " sea" : ""}" aria-label="${step === 1 ? "Previsione ora per ora" : "Previsione ogni 3 ore"}">${cells}</ol>
+    <p class="h-note">Millimetri di pioggia ${step === 1 ? "nell'ora" : "nelle 3 ore"}, vento in km/h${waves ? ", onde in metri" : ""}.</p></div>`;
 }
 function fasceBlock(d) {
   const fasce = (d.fasce || []).map((f, k) => f ? `<li>${icon(f.codice, 30, k === 0 || k === 3)}
@@ -538,9 +678,9 @@ function fasceBlock(d) {
   if (!fasce) return "";
   return `<div class="hours"><div class="h-head"><h3>Durante il giorno</h3>${d.alba ? `<span class="sun">Alba ${d.alba.replace(/^0/, "")}, tramonto ${d.tramonto.replace(/^0/, "")}</span>` : ""}</div>
     <ul class="fasce" aria-label="Fasce della giornata">${fasce}</ul>
-    <p class="h-note">Così lontano i modelli non danno ancora il dettaglio ora per ora.</p></div>`;
+    <p class="h-note">${d.data <= addDays(romeDate(), 5) ? "Il dettaglio ora per ora arriva con il prossimo aggiornamento dei modelli." : "Così lontano i modelli non danno ancora il dettaglio ora per ora."}</p></div>`;
 }
-function facts(d) {
+function facts(d, data) {
   const out = [];
   const r = rainText(d), [noun] = rainNoun(d);
   if (r) out.push([noun, r.slice(noun.length + 1)]);
@@ -548,6 +688,7 @@ function facts(d) {
   if (v && v.kmh != null) out.push(["Vento", `${v.nome}, ${num(v.kmh)} km/h${v.raffiche >= 40 ? `, raffiche fino a ${num(Math.round(v.raffiche / 5) * 5)}` : ""}`]);
   const n = d.neve, p = d.pioggia?.p ?? 0;
   if (n && p >= 25 && n.quota <= 2000) out.push(["Quota neve", `circa ${num(n.quota)} m`]);
+  if (d.mare && data && data.mare_km != null) out.push([data.mare_km >= 3 ? `Mare (a ${num(data.mare_km)} km)` : "Mare", seaText(d.mare)]);
   return `<dl class="facts">${out.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`;
 }
 function detail(data, today) {
@@ -563,8 +704,9 @@ function detail(data, today) {
       <p class="sentence">${esc(daySentence(d))}</p>
     </div>
     ${al ? `<p class="al-l al-${al.level}">${TRI}<span>${esc(cap(al.text))}. <a href="${esc(C.alerts.link)}" target="_blank" rel="noopener">Bollettino</a></span></p>` : ""}
-    ${facts(d)}
+    ${facts(d, data)}
     ${hoursBlock(d, today)}
+    ${mountainBlock(d, data)}
     <div class="d-grid">
       ${why ? `<div class="d-col">${why}</div>` : ""}
       <div class="d-col"><h3>${fan(st, 28)} ${STATE[st]}</h3>
@@ -710,6 +852,91 @@ function introCard() {
   </aside>`;
 }
 
+// ---------- scheda da condividere ----------
+const SHARE = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 15V3.5M7.5 8 12 3.5 16.5 8M5 12.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-6.5"/></svg>`;
+/** Disegna su una tela 1080×1350 la previsione dei prossimi giorni, come immagine da mandare o pubblicare. */
+async function drawCard(data) {
+  if (document.fonts) { try { await document.fonts.ready; } catch (e) { /* va bene anche senza */ } }
+  const W = 1080, H = 1350, cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const g = cv.getContext("2d");
+  if (!g.roundRect) g.roundRect = function (x, y, w, h) { this.rect(x, y, w, h); };
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const ink = "#13283D", paper = "#E9EEF1", max = "#C8102E", min = "#0B4EA2", muted = "#5A6A79", rain = "#1C7C93";
+  const F = (w, size, wdth = 100) => `${w} ${size}px ${css("--font") || "Archivo, Arial Narrow, sans-serif"}`;
+  g.fillStyle = paper; g.fillRect(0, 0, W, H);
+  const img = (svg, x, y, size) => new Promise((ok) => {
+    const im = new Image();
+    const styled = svg.replace("<svg ", `<svg xmlns="http://www.w3.org/2000/svg" style="--panel:#fff;--ink:${ink};--muted:${muted};--sun:#E3A21A;--moon:#8E9DAC;--cloud-dark:#B3BEC8;--rain:${rain};--min:${min};--bassa:${max};--fan-a:#C9D7E2;--fan-b:#fff" `)
+      .replace(/<svg([^>]*)>/, `<svg$1><style>.i-sun{fill:#E3A21A}.i-ray{stroke:#E3A21A;stroke-width:1.7;stroke-linecap:round}.i-moon{fill:#8E9DAC}.i-cloud{fill:#fff;stroke:${ink};stroke-width:1.5;stroke-linejoin:round}.i-back{stroke:${muted}}.i-dark{fill:#B3BEC8}.i-drop{stroke:${rain};stroke-width:1.8;stroke-linecap:round}.i-flake path{stroke:${min};stroke-width:1.3;stroke-linecap:round}.i-bolt{fill:#E3A21A;stroke:${ink};stroke-width:.6}.fan-rib,.fan-arc{fill:none;stroke:${ink};stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.fan-p0{fill:#C9D7E2}.fan-p1{fill:#fff}.fan-pin{fill:${max}}</style>`);
+    im.onload = () => { g.drawImage(im, x, y, size, size * (im.height / im.width || 1)); ok(); };
+    im.onerror = () => ok();
+    im.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(styled);
+  });
+  const today = romeDate();
+  const days = data.giorni.filter((d) => d.data >= today);
+  const d0 = days[0];
+  // testata
+  await img(fan("aperto", 60), 64, 70, 76);
+  g.fillStyle = ink; g.font = F(700, 40); g.fillText("Ventaglio", 152, 112);
+  g.font = F(600, 26); g.fillStyle = min; g.fillText(MOTTO, 64, 170);
+  g.fillStyle = ink; g.font = F(700, 104);
+  const name = data.nome.split("/")[0];
+  let fs = 104; while (g.measureText(name).width > W - 128 && fs > 56) { fs -= 4; g.font = F(700, fs); }
+  g.fillText(name, 64, 300);
+  g.font = F(400, 28); g.fillStyle = muted;
+  g.fillText(`${cap(fWeek.format(dateObj(d0.data)))} ${fDayMonth.format(dateObj(d0.data))}`, 64, 348);
+  // oggi in grande
+  g.fillStyle = "#fff"; g.beginPath(); g.roundRect(48, 390, W - 96, 380, 28); g.fill();
+  await img(icon(d0.codice, 64), 88, 430, 210);
+  g.font = F(700, 150); g.fillStyle = max; g.fillText(deg(d0.max), 330, 570);
+  const wmax = g.measureText(deg(d0.max)).width;
+  g.font = F(700, 80); g.fillStyle = min; g.fillText(deg(d0.min), 350 + wmax, 570);
+  g.font = F(600, 34); g.fillStyle = ink; g.fillText(LABEL[d0.codice] || "", 330, 630);
+  const rt = rainText(d0);
+  g.font = F(500, 28); g.fillStyle = (d0.pioggia?.p ?? 0) >= 50 ? rain : muted;
+  if (rt) g.fillText(rt.length > 52 ? rt.slice(0, 50) + "…" : rt, 330, 680);
+  const st = d0.incertezza?.stato || "quasi";
+  await img(fan(st, 40), 88, 686, 58);
+  g.font = F(600, 28); g.fillStyle = ink; g.fillText(`${STATE[st]}: ${SURE[st]}`, 160, 726);
+  // i giorni dopo
+  const next = days.slice(1, 5), colW = (W - 96) / next.length;
+  for (let i = 0; i < next.length; i++) {
+    const d = next[i], x = 48 + i * colW, cx = x + colW / 2;
+    g.fillStyle = "#fff"; g.beginPath(); g.roundRect(x + 6, 800, colW - 12, 400, 24); g.fill();
+    g.textAlign = "center"; g.fillStyle = ink; g.font = F(700, 32);
+    g.fillText(cap(dayName(d.data, today)).split(" ")[0], cx, 852);
+    await img(icon(d.codice, 64), cx - 60, 872, 120);
+    g.font = F(700, 52); g.fillStyle = max; g.fillText(deg(d.max), cx, 1050);
+    g.font = F(700, 36); g.fillStyle = min; g.fillText(deg(d.min), cx, 1098);
+    const p = d.pioggia?.p ?? 0;
+    g.font = F(600, 24); g.fillStyle = p >= 50 ? rain : muted;
+    g.fillText(p >= 25 && d.pioggia?.mm >= 0.1 ? mmText(d.pioggia.mm) : p >= 25 ? "pioggia possibile" : "asciutto", cx, 1140);
+    await img(fan(d.incertezza?.stato || "quasi", 40), cx - 30, 1150, 60);
+    g.textAlign = "left";
+  }
+  g.font = F(400, 24); g.fillStyle = muted;
+  g.fillText("francescougenti.github.io/carte-meteo", 64, 1290);
+  g.textAlign = "right"; g.fillText(`Aggiornato ${whenText(Date.parse(data.aggiornato))}`, W - 64, 1290); g.textAlign = "left";
+  return new Promise((ok) => cv.toBlob(ok, "image/png"));
+}
+async function shareCard(data) {
+  const blob = await drawCard(data);
+  if (!blob) return;
+  const name = data.nome.split("/")[0];
+  const file = new File([blob], `ventaglio-${data.id}.png`, { type: "image/png" });
+  const url = `${location.origin}${location.pathname}#citta/${data.id}`;
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: `Il meteo di ${name}`, text: `Il meteo di ${name} su Ventaglio: ${url}` }); return; }
+    catch (e) { if (e && e.name === "AbortError") return; }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = file.name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  window.dispatchEvent(new CustomEvent("ventaglio:toast", { detail: "Immagine scaricata: puoi mandarla o pubblicarla" }));
+}
+
 // ---------- pagine ----------
 function homePage() {
   const byReg = new Map();
@@ -731,12 +958,16 @@ function homePage() {
     <p class="lede">Il meteo del tuo comune e quanto è sicuro. Più il ventaglio di un giorno è chiuso, più puoi fidarti della previsione.</p>
     ${search("Cerca il tuo comune")}
     ${favBlock}
-    <a class="radar-card" href="#radar">${RADAR_ICON}<span><b>Radar della pioggia</b>Dove piove adesso in Italia, dalla Protezione Civile</span></a>
+    <div class="cards2">
+      <a class="radar-card" href="#radar">${RADAR_ICON}<span><b>Radar della pioggia</b>Dove piove adesso in Italia, dalla Protezione Civile</span></a>
+      <a class="radar-card" href="#neve">${SNOW_ICON}<span><b>Neve e piste</b>Comprensori aperti, impianti e neve a valle e in quota</span></a>
+    </div>
     <h2 class="regs-title">I capoluoghi</h2>
     <div class="regs">${lists}</div>
     <p class="explain">Per ogni giorno confrontiamo quattro modelli e 81 scenari dell'atmosfera, e ti diciamo quando conviene ricontrollare. <a href="#come-funziona">Come funziona</a></p>
   </section>`;
 }
+const SNOW_ICON = `<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" class="radar-i"><path d="M2.5 19.5 9 9l3.5 5 2.5-3.5 6.5 9z"/><path d="m7.4 11.6 1.6.9 1.4-1.1M13.8 12.3l1.3.4 1.1-.9"/></svg>`;
 const RADAR_ICON = `<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" class="radar-i"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12 18.4 5.6"/><circle cx="15.5" cy="8.6" r="1.4" class="blip"/></svg>`;
 
 function cityPage(data) {
@@ -754,7 +985,7 @@ function cityPage(data) {
   return `<section class="city">
     <header class="c-head">
       <div class="c-title">
-        <h1>${esc(data.nome.split("/")[0])}<button type="button" class="star" id="star" aria-pressed="${fav}" aria-label="${fav ? "Togli dai preferiti" : "Aggiungi ai preferiti"}" title="${fav ? "Togli dai preferiti" : "Aggiungi ai preferiti"}">${STAR}</button></h1>
+        <h1>${esc(data.nome.split("/")[0])}<button type="button" class="share" id="share" aria-label="Condividi la previsione" title="Condividi la previsione">${SHARE}</button><button type="button" class="star" id="star" aria-pressed="${fav}" aria-label="${fav ? "Togli dai preferiti" : "Aggiungi ai preferiti"}" title="${fav ? "Togli dai preferiti" : "Aggiungi ai preferiti"}">${STAR}</button></h1>
         <p class="where">${esc(where)}. Aggiornato ${esc(whenText(up))}.${zone}</p>
       </div>
       <div class="c-tools">${search("Cerca un altro comune", `<a class="radar-btn" href="#radar/${esc(data.id)}">${RADAR_ICON}<span>Radar</span></a>`)}</div>
@@ -765,9 +996,11 @@ function cityPage(data) {
     ${alertBanner(data, today)}
     ${introCard()}
     ${hero(data, today)}
+    <div id="stationBox">${stationLine(data)}</div>
     ${changesBlock(note)}
     ${fanChart(data, today)}
     <div id="detail">${detail(data, today)}</div>
+    <div id="cams"></div>
     <p class="motto-foot">${fan("deciso", 22)} ${MOTTO}</p>
   </section>`;
 }
@@ -822,6 +1055,17 @@ function infoPage() {
     <p>Il <a href="#radar">radar</a> mostra dove piove adesso, con l'ultima ora animata: sono i dati della rete radar nazionale del Dipartimento della Protezione Civile.
       Le allerte vengono dal bollettino nazionale di criticità idrogeologica e idraulica della Protezione Civile, che esce ogni giorno nel primo pomeriggio e vale per oggi e domani:
       se il tuo comune è in una zona con allerta gialla, arancione o rossa, lo vedi in cima alla pagina. Per le decisioni contano gli avvisi ufficiali della tua regione e del tuo comune.</p>
+    <h2>Il mare</h2>
+    <p>Per i comuni a meno di 12 km dalla costa Ventaglio mostra lo stato del mare, con le parole della scala Douglas (calmo, poco mosso, mosso, molto mosso, agitato...)
+      e l'altezza delle onde, anche ora per ora. Viene dal modello d'onda di ECMWF, ogni 3 ore per 6 giorni, nel punto di mare più vicino al comune:
+      è il mare al largo, sotto costa e nelle baie può essere più calmo.</p>
+    <h2>Montagna, neve e piste</h2>
+    <p>Per i comuni sopra i 700 metri o vicini a un comprensorio sciistico c'è il riquadro "In montagna": zero termico, quota neve, neve fresca prevista,
+      temperatura e vento a 1.500 metri e i comprensori vicini. La pagina <a href="#neve">Neve e piste</a> dice quanti comprensori, impianti e chilometri di piste sono aperti
+      e quanta neve c'è a valle e in quota, dai bollettini dei comprensori raccolti da LiftRadar due volte al giorno (per ora Alpi centrali e orientali e Valle d'Aosta).</p>
+    <h2>Centraline e webcam</h2>
+    <p>Quando c'è una centralina della rete MeteoNetwork entro 12 km e a una quota simile, sotto la previsione di oggi vedi cosa misura adesso.
+      Le webcam vicine vengono da Windy.com. Con il pulsante di condivisione accanto al nome del comune ottieni un'immagine con la previsione da mandare o pubblicare.</p>
     <h2>Preferiti</h2>
     <p>Con la stella accanto al nome aggiungi un comune ai preferiti: li ritrovi nella pagina iniziale e in cima alla pagina di ogni comune. Restano solo in questo browser.</p>
     <h2>IA contro fisica</h2>
@@ -833,6 +1077,8 @@ function infoPage() {
     <h2>Fonti e licenze</h2>
     <p>ECMWF Open Data (IFS, AIFS, ENS), licenza CC BY 4.0. NOAA/NCEP (GFS, GEFS), pubblico dominio. Deutscher Wetterdienst (ICON-EU). Elenco dei comuni: dati ISTAT tramite Garda Informatica (licenza MIT).
       Radar e bollettino di criticità: Dipartimento della Protezione Civile, licenza CC BY 4.0. Mappa di base del radar: © OpenStreetMap contributors, © CARTO.
+      Onde: modello d'onda ECMWF (Open Data, CC BY 4.0). Comprensori sciistici: LiftRadar, dai bollettini dei comprensori; pericolo valanghe AINEVA ed Euregio.
+      Centraline: MeteoNetwork (CC BY 4.0). Webcam: Windy.com.
       Quote dal modello digitale del terreno AWS Terrain Tiles. Previsioni e grafici sono un'elaborazione di questo sito, non prodotti ufficiali degli enti.</p>
   </article>`;
 }
@@ -948,7 +1194,7 @@ async function loadComuni() {
   C.comuni = raw.comuni.map((r) => {
     const [provincia, regione] = raw.province[r[F.sigla]] || ["", ""];
     return { id: r[F.id], nome: r[F.nome], altro: r[F.altro] || null, sigla: r[F.sigla], provincia, regione,
-      lat: r[F.lat], lon: r[F.lon], alt: r[F.alt], file: r[F.file] };
+      lat: r[F.lat], lon: r[F.lon], alt: r[F.alt], file: r[F.file], mare: F.mare == null ? null : r[F.mare] };
   });
   C.comuniById = new Map(C.comuni.map((c) => [c.id, c]));
   return C.comuni;
@@ -984,7 +1230,8 @@ function adapt(zone, c) {
     }
   }
   for (const snaps of Object.values(d.storia || {})) for (const s of snaps) { s[1] = sh(s[1]); s[2] = sh(s[2]); }
-  Object.assign(d, { id: c.id, nome: c.nome, altro: c.altro, sigla: c.sigla, provincia: c.provincia, regione: c.regione,
+  if (c.mare == null) for (const g of d.giorni) { delete g.mare; for (const r of g.ore || []) r.length = Math.min(r.length, 9); }
+  Object.assign(d, { mare_km: c.mare, id: c.id, nome: c.nome, altro: c.altro, sigla: c.sigla, provincia: c.provincia, regione: c.regione,
     lat: c.lat, lon: c.lon, alt: c.alt, zona: { id: zone.id, comuni: zone.comuni, alt: zone.alt } });
   return d;
 }
@@ -1023,6 +1270,8 @@ function wireCity(root) {
     star.title = star.getAttribute("aria-label");
     window.dispatchEvent(new CustomEvent("ventaglio:toast", { detail: on ? `${C.data.nome.split("/")[0]} è tra i preferiti` : "Tolto dai preferiti" }));
   });
+  const sh = root.querySelector("#share");
+  if (sh) sh.addEventListener("click", () => shareCard(C.data).catch(() => {}));
   const ok = root.querySelector("#introOk");
   if (ok) ok.addEventListener("click", () => { store("spiegato", true); root.querySelector("#intro").remove(); });
   wireDetail(root);
@@ -1062,7 +1311,7 @@ window.Citta = {
     let data;
     const file = comune ? comune.file : `citta/${id}`;
     try {
-      [data] = await Promise.all([getJSON(`data/${file}.json?u=${encodeURIComponent(C.index.aggiornato)}`), loadAlerts()]);
+      [data] = await Promise.all([getJSON(`data/${file}.json?u=${encodeURIComponent(C.index.aggiornato)}`), loadAlerts(), loadSki(), loadStations()]);
       if (comune && file.startsWith("celle/")) data = adapt(data, comune);
     } catch (e) { C.root.innerHTML = `<section class="home"><p class="note">Non riesco a caricare la previsione di ${esc(p.nome)}. Controlla la connessione e ricarica la pagina.</p></section>`; return true; }
     if (C.loading !== token) return true;
@@ -1072,9 +1321,16 @@ window.Citta = {
     C.root.innerHTML = cityPage(data);
     wireCity(C.root);
     loadRanking().then(() => { const box = C.root.querySelector("#rankBox"); if (box && C.data === data) box.innerHTML = rankBox(data); }).catch(() => {});
+    webcams(data).then((list) => { const box = C.root.querySelector("#cams"); if (box && C.data === data) box.innerHTML = camsBlock(list); }).catch(() => {});
     store("citta", id);
     document.title = `${data.nome.split("/")[0]}: il meteo e quanto è sicuro – Ventaglio`;
     return true;
+  },
+  async ski() {
+    try { await loadIndex(); } catch (e) { /* l'indice serve solo per la data */ }
+    await loadSki();
+    C.root.innerHTML = skiPage();
+    document.title = "Neve e piste – Ventaglio";
   },
   info() {
     C.root.innerHTML = infoPage();

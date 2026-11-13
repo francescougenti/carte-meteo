@@ -336,3 +336,46 @@
 .leaflet-control-attribution{font-size:11px}
 @media (max-width:600px){.r-map{height:62vh}.r-time{min-width:96px}.r-time b{font-size:18px}}
 .info .fans{margin:8px 0 14px}
+
+/* ---------- mare ---------- */
+.sea-l{display:flex;gap:8px;align-items:flex-start;margin:0 0 8px;font-size:15px;line-height:1.35;font-weight:600;color:var(--sea)}
+.wave{flex:none;margin-top:1px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round}
+.h-strip.sea li{grid-template-rows:20px 34px 34px 30px 18px 18px}
+.h-s{font-size:12px;font-weight:600;color:var(--sea);font-variation-settings:"wdth" 85}
+
+/* ---------- montagna e sci ---------- */
+.mountain{margin:18px 0 0;padding:14px 16px 12px;border-radius:14px;background:var(--tint)}
+.mountain .h-head a{font-size:14px;font-weight:600}
+.mountain .facts{margin-top:4px}
+.ski-list{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}
+.ski{background:var(--panel);border:1px solid var(--rule);border-left:5px solid var(--rule-strong);border-radius:12px;padding:10px 14px}
+.ski.s-open{border-left-color:var(--ok)}
+.ski.s-closed{border-left-color:var(--muted)}
+.sk-head{display:flex;align-items:baseline;gap:6px 12px;flex-wrap:wrap}
+.sk-head b{font-size:16.5px;font-variation-settings:"wdth" 92}
+.sk-state{font-size:13px;font-weight:700;color:var(--muted)}
+.s-open .sk-state{color:var(--ok)}
+.sk-km{font-size:13px;color:var(--muted);margin-left:auto}
+.sk-fc{font-size:13.5px;margin-left:auto;font-weight:600}
+.ski p{margin:4px 0 0;font-size:14.5px;line-height:1.4}
+.sk-av{display:inline-block;margin-left:4px;padding:0 6px;border-radius:4px;font-size:12.5px;font-weight:700;background:var(--av);color:#13283D}
+.av-1{--av:#CCFF66}.av-2{--av:#FFFF00}.av-3{--av:#FF9900}.av-4{--av:#FF0000}.av-5{--av:#FF0000}
+.av-4,.av-5{color:#fff}
+.skipage{max-width:860px}
+.ski-reg h2{margin-top:22px!important}
+
+/* ---------- centralina, webcam, condivisione ---------- */
+.station{display:flex;gap:8px;align-items:flex-start;margin:12px 2px 0;font-size:14.5px;line-height:1.4;color:var(--ink)}
+.st-i{flex:none;margin-top:1px;fill:none;stroke:var(--muted);stroke-width:1.7;stroke-linecap:round}
+.station a{font-size:13px}
+.cams{margin:16px 0 0;background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:16px 20px}
+.cam-grid{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.cam-grid a{display:block;text-decoration:none;color:var(--ink)!important;font-size:13.5px}
+.cam-grid img{display:block;width:100%;max-width:400px;aspect-ratio:16/9;object-fit:cover;border-radius:10px;background:var(--tint)}
+.cam-grid span{display:block;margin-top:4px;line-height:1.3}
+.share{flex:none;border:0;background:none;padding:6px;margin-top:4px;cursor:pointer;border-radius:50%;line-height:0;color:var(--muted)}
+.share svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.share:hover{background:var(--hover);color:var(--ink)}
+.c-head h1 .share{margin-left:4px}
+.cards2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:10px;margin:26px 0 0;max-width:900px}
+.cards2 .radar-card{margin:0;max-width:none}

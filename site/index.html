@@ -41,6 +41,7 @@
   --sun:#E3A21A; --moon:#8E9DAC; --cloud-dark:#B3BEC8;
   --tint:#F3F6F8; --hover:#F2F5F7; --sel:#EAF1FA; --rule-strong:#9FB0BD; --fan-a:#C9D7E2; --fan-b:#FFFFFF;
   --focus:rgba(11,78,162,.25); --shadow:rgba(19,40,61,.14); --overlay:rgba(255,255,255,.92);
+  --sea:#14708A; --ok:#1E7B45;
   color-scheme:light;
 }
 :root[data-theme="dark"]{
@@ -48,7 +49,7 @@
   --alta:#7AB0FF; --bassa:#FF6F66; --max:#FF7D72; --min:#82B4FF;
   --rain:#4DB8D2; --rain-soft:#3A7C8E; --rain-deep:#A8E4F2; --sun:#F2B73A; --moon:#C9D3DC; --cloud-dark:#4E6275;
   --tint:#172937; --hover:#1A2D3D; --sel:#1B3149; --focus:rgba(122,176,255,.35); --shadow:rgba(0,0,0,.5); --fan-a:#3A5770; --fan-b:#13212E;
-  --overlay:rgba(19,33,46,.92); color-scheme:dark;
+  --overlay:rgba(19,33,46,.92); color-scheme:dark; --sea:#5CC3DB; --ok:#5BD08A;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
@@ -56,7 +57,7 @@
     --alta:#7AB0FF; --bassa:#FF6F66; --max:#FF7D72; --min:#82B4FF;
     --rain:#4DB8D2; --rain-soft:#3A7C8E; --rain-deep:#A8E4F2; --sun:#F2B73A; --moon:#C9D3DC; --cloud-dark:#4E6275;
     --tint:#172937; --hover:#1A2D3D; --sel:#1B3149; --focus:rgba(122,176,255,.35); --shadow:rgba(0,0,0,.5); --fan-a:#3A5770; --fan-b:#13212E;
-    --overlay:rgba(19,33,46,.92); color-scheme:dark;
+    --overlay:rgba(19,33,46,.92); color-scheme:dark; --sea:#5CC3DB; --ok:#5BD08A;
   }
 }
 *{box-sizing:border-box}
@@ -266,7 +267,7 @@ body.city-mode .theme{margin-left:auto}
 </div>
 
 <footer>
-  <a href="#come-funziona">Come funziona Ventaglio</a>. <a href="#ia-contro-fisica">IA contro fisica</a>.
+  <a href="#come-funziona">Come funziona Ventaglio</a>. <a href="#ia-contro-fisica">IA contro fisica</a>. <a href="#neve">Neve e piste</a>.
   Dati GFS e GEFS: NOAA/NCEP. Dati ECMWF, AIFS ed ENS: <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF Open Data</a>,
   licenza <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Dati ICON-EU: Deutscher Wetterdienst (DWD), opendata.dwd.de.
   Elenco dei comuni: dati ISTAT tramite Garda Informatica (licenza MIT).
@@ -284,7 +285,7 @@ const $ = (id) => document.getElementById(id);
 const H = 36e5;
 const COLORS = { gfs: "#0B4EA2", ecmwf: "#C8102E", aifs: "#7A3FB0", "icon-eu": "#16834A" };
 const ENS_DET = { gefs: "gfs", "ecmwf-ens": "ecmwf" };
-const CITY_VIEWS = ["citta", "info", "ia", "radar"];
+const CITY_VIEWS = ["citta", "info", "ia", "radar", "neve"];
 const S = { m: null, view: "citta", cityId: null, station: null, model: "gfs", a: "gfs", b: "ecmwf", ens: "gefs", product: "spaghetti",
             region: "italia", chart: "z500", valid: null, city: "ostuni", plume: "gefs", playing: false, timer: null };
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -798,6 +799,7 @@ async function showCity() {
   if (view !== "radar") Radar.close();
   if (view === "radar") await Radar.open($("cityview"), await Citta.place(S.cityId));
   else if (view === "info") Citta.info();
+  else if (view === "neve") await Citta.ski();
   else if (view === "ia") await Citta.ranking(S.station);
   else if (S.cityId) { if (!(await Citta.open(S.cityId))) { S.cityId = null; await Citta.home(); } }
   else await Citta.home();
@@ -809,7 +811,7 @@ function writeHash() {
   let h;
   if (CITY_VIEWS.includes(S.view)) {
     h = S.view === "info" ? "#come-funziona" : S.view === "ia" ? `#ia-contro-fisica${S.station ? "/" + S.station : ""}`
-      : S.view === "radar" ? `#radar${S.cityId ? "/" + S.cityId : ""}`
+      : S.view === "radar" ? `#radar${S.cityId ? "/" + S.cityId : ""}` : S.view === "neve" ? "#neve"
       : S.cityId ? `#citta/${S.cityId}` : "#citta";
     if (location.hash !== h) history.replaceState(null, "", h);
     return;
@@ -827,6 +829,7 @@ function readHash() {
   if (!parts.length) { S.view = "citta"; S.cityId = Citta.remembered() || null; return; }
   if (parts[0] === "citta") { S.view = "citta"; S.cityId = parts[1] || null; return; }
   if (parts[0] === "come-funziona") { S.view = "info"; return; }
+  if (parts[0] === "neve") { S.view = "neve"; return; }
   if (parts[0] === "radar") { S.view = "radar"; S.cityId = parts[1] || S.cityId || Citta.remembered() || null; return; }
   if (parts[0] === "ia-contro-fisica") { S.view = "ia"; S.station = parts[1] || null; return; }
   if (!S.m) { S.view = parts[0]; return; }

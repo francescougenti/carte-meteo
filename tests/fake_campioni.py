@@ -139,6 +139,25 @@ def write_hourly(run, places):
                              [v.strftime("%Y-%m-%dT%H:%M:%SZ") for v in valids], series)
 
 
+def write_sea(run):
+    """Onde sintetiche davanti ai comuni costieri: crescono al passaggio delle perturbazioni."""
+    from meteo import mare
+    pts = mare.targets()
+    hs = mare.STEPS
+    valids = [run + dt.timedelta(hours=x) for x in hs]
+    series = {n: np.full((len(pts), len(hs)), np.nan, np.float32) for n in ("swh", "mwd", "pp1d")}
+    for i, p in enumerate(pts):
+        q = dict(p, alt=0)
+        for j, t in enumerate(valids):
+            x = truth(q, t)
+            h = 0.25 + 0.15 * abs(math.sin(p["lon"])) + 2.2 * min(1.0, math.hypot(x["u10"], x["v10"]) / 7)
+            series["swh"][i, j] = h
+            series["mwd"][i, j] = (math.degrees(math.atan2(-x["u10"], -x["v10"])) + 360) % 360
+            series["pp1d"][i, j] = 3.5 + 1.8 * h
+    points.write_samples(PUB, "ecmwf-mare", run.strftime("%Y-%m-%dT%H:%M:%SZ"), [p["id"] for p in pts], hs,
+                         [v.strftime("%Y-%m-%dT%H:%M:%SZ") for v in valids], series)
+
+
 def main():
     places = luoghi.sample_points()
     for p in places:
@@ -150,6 +169,7 @@ def main():
         write_run(run, places)
         if run == LAST:
             write_hourly(run, [p for p in places if not p["id"].startswith("st-")])
+            write_sea(run)
         citta.build(PUB, now=run + dt.timedelta(hours=5))
         run += dt.timedelta(hours=6)
 

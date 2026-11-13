@@ -2,7 +2,7 @@
    - pagine, stili e script: subito dalla memoria, aggiornati in sottofondo
    - dati (data/): prima dalla rete, dalla memoria solo se la rete manca
    - carte (maps/): dalla memoria se già viste, al massimo le ultime 80 */
-const SHELL = "ventaglio-pagine-v3";
+const SHELL = "ventaglio-pagine-v4";
 const DATA = "ventaglio-dati-v1";
 const MAPS = "ventaglio-carte-v1";
 const SHELL_FILES = ["./", "citta.js", "citta.css", "radar.js", "icona.svg", "vendor/chart.umd.js", "manifest.webmanifest"];

@@ -18,6 +18,8 @@ I giorni sono quelli del calendario italiano; le quantità giornaliere coprono l
 
 ## `data/citta/comuni.json`
 
+L'ultimo campo, `mare`, è la distanza dalla costa in km per i comuni entro 12 km dal mare (vuoto per gli altri).
+
 Tutti i 7.894 comuni, per la ricerca e "Vicino a me":
 `{"campi": ["id", "nome", "altro", "sigla", "lat", "lon", "alt", "file"], "province": {sigla: [provincia, regione]}, "comuni": [[...], ...]}`.
 `file` è `citta/<id>` o `celle/<id>`.
@@ -50,6 +52,7 @@ Previsione completa di un luogo.
 | Campo | Contenuto |
 |---|---|
 | `id`, `nome`, `altro`, `provincia`, `sigla`, `regione`, `lat`, `lon`, `alt` | il luogo (`altro`: nome nell'altra lingua, per esempio Bozen) |
+| `mare_km` | distanza del centro dalla costa in km, solo se entro 12 km (comuni "sul mare") |
 | `aggiornato` | quando è stata calcolata questa previsione |
 | `corse` | corsa usata per ogni modello |
 | `membri` | numero di scenari (membri degli ensemble) disponibili |
@@ -77,9 +80,12 @@ Ogni elemento di `giorni`:
 | `incertezza` | vedi sotto |
 | `alba`, `tramonto` | ore locali (`"06:34"`), calcolate per la posizione del luogo |
 | `ore` | ora per ora, solo per i primi 6 giorni (vedi sotto) |
+| `quota` | in quota: `t1500` temperatura a 850 hPa (circa 1.500 m), `vento` km/h e `dir` direzione di provenienza a 850 hPa |
+| `mare` | solo per i luoghi sul mare, nelle ore di luce (6–21): onde `min` e `max` (altezza significativa, m), `stato` (scala Douglas 0–9: calmo, quasi calmo, poco mosso, mosso, molto mosso, agitato, molto agitato, grosso, molto grosso, tempestoso), `dir` (da dove arrivano, gradi) e `periodo` (s) all'ora delle onde più alte; primi 6 giorni |
 | `pioggia_ore` | fino a due intervalli di pioggia `[dalle, alle, mm]` in ore locali (24 = mezzanotte), ricavati da `ore`; mancano se il giorno nel complesso è asciutto (probabilità sotto il 30% e meno di 1 mm) |
 
-`ore`: righe `[ora, temperatura, mm, nubi %, vento km/h, direzione di provenienza in gradi, icona, notte (0/1), passo in ore]`,
+`ore`: righe `[ora, temperatura, mm, nubi %, vento km/h, direzione di provenienza in gradi, icona, notte (0/1), passo in ore]`
+(più l'altezza delle onde in metri come decimo valore, per i luoghi sul mare),
 in ora locale. Per oggi, domani e dopodomani una riga ogni ora (da quella in corso), poi una ogni 3 ore fino al sesto giorno.
 I `mm` sono quelli caduti nel `passo` che termina a quell'ora. È una media pesata di ICON-EU (ogni ora fino a +78 h),
 ECMWF IFS e GFS (ogni 3 ore, interpolati nelle ore intermedie), con la temperatura corretta per l'altitudine come per i giorni.
@@ -136,6 +142,22 @@ Temperature osservate nelle stazioni aeroportuali italiane (bollettini METAR, NO
 - `abbinamenti`: `{luogo: [ICAO, distanza km]}`: stazione entro 25 km e 150 m di dislivello
 - `recenti`: osservazioni grezze delle ultime 72 ore, per ricalcolare minime e massime
 
+## `data/sci.json`
+
+Comprensori sciistici italiani da [LiftRadar](https://liftradar.eu) (bollettini dei comprensori e degli enti turistici, due volte al giorno).
+
+- `totale`: `comprensori`, `aperti`, `impianti` `[aperti, totali]`, `km` di piste `[aperti, totali]`.
+- `comprensori`: `id`, `nome`, `regione`, `lat`, `lon`, `stato` (`open`, `closed`, `no_report`), `controllato`, `impianti` e `piste` `[aperti, totali]`,
+  `km` `[aperti, totali]`, `neve` `[a valle, in quota, fresca]` in cm (null se non pubblicata), `valanghe` (grado di pericolo 1–5),
+  `comune`, `comune_nome`, `comune_km`: il comune più vicino, per la previsione.
+- `fonte_aggiornata`: quando LiftRadar ha raccolto i dati.
+
+## `data/stazioni.json`
+
+Ultima misura delle centraline MeteoNetwork italiane (solo quelle delle ultime 3 ore). Esiste solo se il repository ha il segreto `MNW_TOKEN` (token BULK).
+`campi`: `codice`, `luogo`, `lat`, `lon`, `quota`, `t` (°C), `umidita` (%), `pioggia_oggi` (mm), `intensita` (mm/h), `vento` (km/h), `dir`, `raffica`, `ora` (UTC);
+`stazioni`: una riga per centralina in quell'ordine.
+
 ## `data/allerte.json`
 
 Allerte del bollettino di criticità idrogeologica e idraulica nazionale del Dipartimento della Protezione Civile
@@ -154,3 +176,5 @@ e un array `v_<variabile>` per variabile, di forma (luoghi, scadenze) o (luoghi,
 `ecmwf-lungo.npz` conserva la corsa delle 00/12 quando quella delle 06/18 arriva solo a +144 h.
 `<modello>-orario.npz` (ICON-EU, ECMWF IFS, GFS) contiene `t2m`, `tp_total` (pioggia cumulata dall'inizio della corsa), `tcc`, `u10` e `v10`
 sui capoluoghi e sulle zone, ogni ora (ICON-EU) o ogni 3 ore, per la previsione ora per ora.
+`ecmwf-mare.npz` contiene `swh` (altezza significativa delle onde, m), `mwd` (direzione media, gradi) e `pp1d` (periodo di picco, s) ogni 3 ore fino a +144 h,
+nella cella di mare più vicina ai capoluoghi costieri e ai comuni costieri di ogni zona.

@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
-from . import luoghi
+from . import luoghi, mare
 from .sources import now_utc
 
 UTC = dt.timezone.utc
@@ -577,6 +577,51 @@ def hourly(place, days, hsrc, sources, now):
 
 
 # --------------------------------------------------------------------------------------
+# Il mare (comuni costieri)
+# --------------------------------------------------------------------------------------
+def load_sea(public):
+    p = os.path.join(public, "data", "campioni", "ecmwf-mare.npz")
+    if not os.path.exists(p):
+        return None
+    try:
+        s = Source("ecmwf-mare", p)
+    except Exception:
+        return None
+    s.t = np.array([v.timestamp() for v in s.valid], np.float64)
+    return s
+
+
+def sea(place, days, src, now):
+    """Onde del giorno (ore di luce) e ora per ora, con la scala Douglas, dove il comune è sul mare."""
+    pid = place["id"]
+    if src is None or pid not in src.row or not days:
+        return
+    for d in days:
+        day = dt.date.fromisoformat(d["data"])
+        t0 = dt.datetime(day.year, day.month, day.day, 6, tzinfo=ROME).astimezone(UTC)
+        tt = np.array([(t0 + dt.timedelta(hours=h)).timestamp() for h in range(0, 16)])
+        tt = tt[tt >= now.replace(minute=0, second=0, microsecond=0).timestamp() - 3600] if d is days[0] else tt
+        if not len(tt):
+            continue
+        h = series_at(src, "swh", pid, tt)
+        if h is None or not np.isfinite(h).any():
+            continue
+        k = int(np.nanargmax(h))
+        mwd, per = series_at(src, "mwd", pid, tt[k:k + 1]), series_at(src, "pp1d", pid, tt[k:k + 1])
+        top = float(np.nanmax(h))
+        d["mare"] = dict(min=rnd(float(np.nanmin(h))), max=rnd(top), stato=mare.douglas(top),
+                         dir=rnd(float(mwd[0]), 0) if mwd is not None and np.isfinite(mwd[0]) else None,
+                         periodo=rnd(float(per[0]), 0) if per is not None and np.isfinite(per[0]) else None)
+        rows = d.get("ore") or []
+        if rows:
+            ts = np.array([dt.datetime(day.year, day.month, day.day, r[0], tzinfo=ROME).timestamp() for r in rows])
+            hh = series_at(src, "swh", pid, ts)
+            if hh is not None:
+                for r, v in zip(rows, hh):
+                    r.append(rnd(float(v)) if np.isfinite(v) else None)
+
+
+# --------------------------------------------------------------------------------------
 # Il perché: la causa principale del tempo di ogni giorno, con la carta che la mostra
 # --------------------------------------------------------------------------------------
 def at_iso(day, hour):
@@ -615,6 +660,8 @@ def reasons(days, today):
         if p >= 0.6 and mm >= 2 and not any(r[1]["tipo"] in ("bassa", "neve", "temporali") for r in out):
             out.append((3, dict(tipo="pioggia", carta="prec6", ora=at_iso(d["data"], a["h_rain"]))))
         d["perche"] = [r for _, r in sorted(out, key=lambda x: -x[0])[:3]]
+        if a["t850"] is not None:  # in quota: temperatura e vento a 1.500 m (850 hPa), per la montagna
+            d["quota"] = dict(t1500=rnd(a["t850"], 0), vento=rnd(a["v850"], 0), dir=rnd(a["dir850"], 0))
         prev = a
 
 
@@ -714,6 +761,7 @@ def build(public, now=None, log=print):
         all_days.append([place_day(p, today + dt.timedelta(days=k), sources, now) for k in range(DAYS)])
     G = growth(all_days)
     hsrc = load_hourly(public, sources)
+    msrc = load_sea(public)
     for s in sources.values():
         if not s.ens:
             s.t = np.array([v.timestamp() for v in s.valid], np.float64)
@@ -723,10 +771,17 @@ def build(public, now=None, log=print):
         except Exception as e:  # l'ora per ora è un di più: non deve fermare la previsione
             log(f"  ! ora per ora {p['id']}: {e}")
             break
+    for p, days in zip(points, all_days):
+        try:
+            sea(p, [d for d in days if d is not None], msrc, now)
+        except Exception as e:
+            log(f"  ! mare {p['id']}: {e}")
+            break
     runs = {sid: iso(s.run) for sid, s in sources.items()}
     members = sum(next(iter(s.vars.values())).shape[1] for s in sources.values() if s.ens and s.vars)
     index = []
     active_ids = {p["id"] for p in places}
+    near_sea = mare.coast_km()
     for p, days in zip(points, all_days):
         reasons(days, today)
         for k, d in enumerate(days):
@@ -737,7 +792,8 @@ def build(public, now=None, log=print):
         path = os.path.join(public, "data", "citta" if is_city else "celle", f"{p['id']}.json")
         old = read_json(path)
         head = (dict(id=p["id"], nome=p["name"], altro=p["alt_name"], provincia=p["provincia"], sigla=p["sigla"],
-                     regione=p["regione"]) if is_city else dict(id=p["id"], comuni=len(p["comuni"])))
+                     regione=p["regione"], mare_km=near_sea.get(p["id"])) if is_city
+                else dict(id=p["id"], comuni=len(p["comuni"])))
         data = dict(formato=FORMAT, **head, lat=p["lat"], lon=p["lon"], alt=p["alt"], aggiornato=iso(now), corse=runs,
                     membri=members, giorni=days,
                     storia=merge_history(old.get("storia") if old else None, days, now, today))
@@ -758,11 +814,13 @@ def build(public, now=None, log=print):
 def write_comuni(public):
     """Elenco di tutti i comuni per la ricerca: nome, provincia, posizione, quota e file della previsione."""
     files = luoghi.file_of()
+    near = mare.coast_km()
     prov = {}
     rows = []
     for p in luoghi.all_places():
         prov.setdefault(p["sigla"], [p["provincia"], p["regione"]])
-        rows.append([p["id"], p["name"], p["alt_name"] or "", p["sigla"], p["lat"], p["lon"], p["alt"], files[p["id"]]])
+        rows.append([p["id"], p["name"], p["alt_name"] or "", p["sigla"], p["lat"], p["lon"], p["alt"], files[p["id"]],
+                     near.get(p["id"])])
     write_json(os.path.join(public, "data", "citta", "comuni.json"),
-               dict(formato=FORMAT, campi=["id", "nome", "altro", "sigla", "lat", "lon", "alt", "file"],
+               dict(formato=FORMAT, campi=["id", "nome", "altro", "sigla", "lat", "lon", "alt", "file", "mare"],
                     province=dict(sorted(prov.items())), comuni=rows))

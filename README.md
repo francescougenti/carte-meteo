@@ -31,7 +31,13 @@ Per ogni comune e per ogni giorno (i capoluoghi e Ostuni sono calcolati nel loro
   (con gli scenari e lo storico, a scomparsa sotto il dettaglio del giorno);
 - **preferiti**: la stella accanto al nome; i preferiti compaiono nella pagina iniziale e in cima a ogni comune (solo nel browser);
 - **allerte**: dal bollettino nazionale di criticità idrogeologica e idraulica della Protezione Civile, comune per comune, per oggi e domani;
-- **radar** (`#radar`): la pioggia in atto dalla rete radar nazionale della Protezione Civile, con l'ultima ora animata.
+- **radar** (`#radar`): la pioggia in atto dalla rete radar nazionale della Protezione Civile, con l'ultima ora animata;
+- **mare**: per i comuni a meno di 12 km dalla costa, stato del mare a parole (scala Douglas) e altezza delle onde, anche ora per ora (modello d'onda ECMWF);
+- **montagna e piste** (`#neve`): zero termico, quota neve, neve fresca prevista e vento in quota per i comuni di montagna; comprensori aperti, impianti,
+  chilometri di piste e neve a valle e in quota dai bollettini dei comprensori (LiftRadar);
+- **centraline e webcam**: la misura della centralina MeteoNetwork più vicina (con il segreto `MNW_TOKEN`, token BULK) e le webcam vicine di Windy
+  (con la chiave `WINDY_KEY` in `site/citta.js`);
+- **scheda da condividere**: un'immagine con la previsione del comune, da mandare o pubblicare.
 
 La pagina **IA contro fisica** confronta ogni giorno le massime e le minime previste da AIFS (intelligenza artificiale), ECMWF IFS,
 GFS e ICON-EU con quelle misurate in circa 40 aeroporti italiani (METAR), con 1, 3 e 5 giorni di anticipo.
@@ -126,5 +132,7 @@ Per provare solo "La tua città", `tests/fake_campioni.py /tmp/pub` simula tre g
 - ICON-EU: [Deutscher Wetterdienst](https://opendata.dwd.de/), open data.
 - Grafici dei meteogrammi: [Chart.js](https://www.chartjs.org/) (licenza MIT), incluso in `site/vendor`.
 - Radar della pioggia (prodotto SRI) e bollettino di criticità: [Dipartimento della Protezione Civile](https://github.com/pcm-dpc), licenza CC BY 4.0.
+- Onde: modello d'onda ECMWF (Open Data, CC BY 4.0). Comprensori sciistici: [LiftRadar](https://liftradar.eu), dai bollettini dei comprensori; pericolo valanghe AINEVA ed Euregio.
+- Centraline: [MeteoNetwork](https://www.meteonetwork.it/) (CC BY 4.0). Webcam: [Windy.com](https://www.windy.com/webcams).
 - Mappa del radar: [Leaflet](https://leafletjs.com/) (licenza BSD-2, in `site/vendor/leaflet`), mappa di base © OpenStreetMap contributors e © CARTO.
 - Coste e confini: [Natural Earth](https://www.naturalearthdata.com/), pubblico dominio. I file in `assets/geo` si rigenerano con `tools/prepara_geo.py`.
