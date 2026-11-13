@@ -5,6 +5,7 @@ punto del comprensorio, "in quota" quello della cella più alta del modello entr
 
 Risultato: data/campioni/icon-eu-neve.npz (letto da sci.update).
 """
+import datetime as dt
 import json
 import os
 
@@ -66,3 +67,30 @@ class Peaks:
         series = {"cima": np.stack([r[2] for r in self.rows], axis=1), "valle": np.stack([r[3] for r in self.rows], axis=1)}
         points.write_samples(self.public, "icon-eu-neve", run.iso, ids, [r[0] for r in self.rows], [r[1] for r in self.rows],
                              series, orog=np.array(self.alts, np.float32))
+
+
+def write_standalone(public, model, run, log=print):
+    """Come durante la generazione delle carte, ma scaricando solo neve al suolo e quota del terreno (ICON-EU)."""
+    from . import grib
+    from .sources import download
+    peaks = Peaks(public)
+    if not peaks.resorts:
+        return
+    for h in model.steps(run):
+        plan = {k: v for k, v in model.plan(run, h).items() if k in ("snow", "orog")}
+        try:
+            raw = download(plan, threads=2)
+        except Exception as e:
+            log(f"    ! neve nei comprensori +{h}h: {e}")
+            continue
+        arrays, lats, lons = {}, None, None
+        for key, (msg, sub) in raw.items():
+            la, lo, v = grib.decode(msg, sub)
+            lats, lons, arrays[key] = la, lo, model.convert(key, v).astype(np.float32)
+        if lats is None:
+            continue
+        if not peaks.ready and "orog" in arrays:
+            peaks.start(lats, lons, arrays["orog"])
+        peaks.add(h, (run.time + dt.timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ"), arrays)
+    peaks.write(run)
+    log(f"    neve nei comprensori: {len(peaks.rows)} scadenze di {model.id}")

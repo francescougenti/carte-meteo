@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ventaglio: il meteo della tua città e quanto è sicuro</title>
-<meta name="description" content="Il meteo dei capoluoghi italiani con quanto è sicura la previsione, quando conviene ricontrollare e cosa è cambiato. Per appassionati: carte GFS, ECMWF, AIFS, ICON-EU ed ensemble.">
+<meta name="description" content="Il meteo dei capoluoghi italiani con quanto è sicura la previsione, quando conviene ricontrollare e cosa è cambiato. Per gli appassionati di meteo: cartografia GFS, ECMWF, AIFS, ICON-EU ed ensemble.">
 <meta name="theme-color" content="#13283D">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Ventaglio">
@@ -42,6 +42,7 @@
   --tint:#F3F6F8; --hover:#F2F5F7; --sel:#EAF1FA; --rule-strong:#9FB0BD; --fan-a:#C9D7E2; --fan-b:#FFFFFF;
   --focus:rgba(11,78,162,.25); --shadow:rgba(19,40,61,.14); --overlay:rgba(255,255,255,.92);
   --sea:#14708A; --ok:#1E7B45; --snow:#7FB3E6;
+  --lab-bg:#13283D; --lab-ink:#F2F6F9; --lab-line:#5E7488; --lab-muted:#B5C3CF; --lab-btn:#13283D;
   color-scheme:light;
 }
 :root[data-theme="dark"]{
@@ -50,6 +51,7 @@
   --rain:#4DB8D2; --rain-soft:#3A7C8E; --rain-deep:#A8E4F2; --sun:#F2B73A; --moon:#C9D3DC; --cloud-dark:#4E6275;
   --tint:#172937; --hover:#1A2D3D; --sel:#1B3149; --focus:rgba(122,176,255,.35); --shadow:rgba(0,0,0,.5); --fan-a:#3A5770; --fan-b:#13212E;
   --overlay:rgba(19,33,46,.92); color-scheme:dark; --sea:#5CC3DB; --ok:#2F9E5E; --snow:#BFE0FF;
+  --lab-bg:#24527F; --lab-ink:#F2F6F9; --lab-line:#7FA2C2; --lab-muted:#C7D6E3; --lab-btn:#9CC3EA;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
@@ -58,6 +60,7 @@
     --rain:#4DB8D2; --rain-soft:#3A7C8E; --rain-deep:#A8E4F2; --sun:#F2B73A; --moon:#C9D3DC; --cloud-dark:#4E6275;
     --tint:#172937; --hover:#1A2D3D; --sel:#1B3149; --focus:rgba(122,176,255,.35); --shadow:rgba(0,0,0,.5); --fan-a:#3A5770; --fan-b:#13212E;
     --overlay:rgba(19,33,46,.92); color-scheme:dark; --sea:#5CC3DB; --ok:#2F9E5E; --snow:#BFE0FF;
+  --lab-bg:#24527F; --lab-ink:#F2F6F9; --lab-line:#7FA2C2; --lab-muted:#C7D6E3; --lab-btn:#9CC3EA;
   }
 }
 *{box-sizing:border-box}
@@ -179,36 +182,47 @@ footer a{color:inherit}
 [hidden]{display:none !important}
 
 /* ---------- marchio e navigazione ---------- */
+.top{position:relative}
 .brand{display:inline-flex;align-items:center;gap:8px;font-size:23px;font-weight:700;color:var(--ink);text-decoration:none;
   font-variation-settings:"wdth" 112;letter-spacing:-.015em}
 .brand svg{width:34px;height:22px;margin-top:-2px}
-.views{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
-.views .main{border:1.5px solid var(--ink);background:none;border-radius:6px;padding:6px 14px;font-weight:600;cursor:pointer;
-  font-variation-settings:"wdth" 90}
+.views{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.views::-webkit-scrollbar{display:none}
+.views .main{flex:none;border:1.5px solid var(--ink);background:none;border-radius:6px;padding:6px 14px;font-weight:600;cursor:pointer;
+  font-variation-settings:"wdth" 90;white-space:nowrap}
 .views .main[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
-.mains{display:inline-flex;gap:6px}
-.views .sep{font-size:13px;color:var(--muted)}
-.theme{margin-left:12px;width:38px;height:38px;border:1px solid var(--rule);background:var(--panel);border-radius:50%;cursor:pointer;
+.views .lab-btn{margin-left:10px;border-color:var(--lab-btn);color:var(--lab-btn);border-style:dashed}
+.views .lab-btn[aria-pressed="true"]{background:var(--lab-bg);color:var(--lab-ink)}
+.theme{margin-left:auto;width:38px;height:38px;border:1px solid var(--rule);background:var(--panel);border-radius:50%;cursor:pointer;
   display:grid;place-items:center;color:var(--ink);flex:none}
 .theme svg{width:18px;height:18px}
-body.city-mode .runs{display:none}
 .install{margin-left:auto;border:1.5px solid var(--ink);background:var(--panel);color:var(--ink);border-radius:18px;padding:6px 14px;
   font-weight:600;cursor:pointer;flex:none}
-.install+.theme{margin-left:8px!important}
-@media (max-width:900px){.install{position:absolute;right:58px;top:12px;padding:6px 12px}}
-@media (max-width:600px){.install{display:none}}
-body.city-mode .theme{margin-left:auto}
-@media (max-width:900px){.views .sep{flex-basis:100%;margin-bottom:-4px}.theme{position:absolute;right:12px;top:12px}.top{position:relative}
-  .views .models button{padding:6px 11px}}
-@media (max-width:600px){
-  .top{padding:10px 12px 10px;gap:10px}
-  .views .mains{position:absolute;top:11px;right:58px}
-  .views .main{padding:5px 10px;font-size:14px}
-  .brand{font-size:20px}
-  .brand svg{width:28px}
-  .theme{top:9px}
+.install+.theme{margin-left:8px}
+/* barra dell'area per appassionati: scura, per capire subito dove si è */
+.labbar{display:flex;align-items:center;gap:10px 20px;flex-wrap:wrap;padding:9px 20px;background:var(--lab-bg);color:var(--lab-ink)}
+.lab-title{font-weight:700;font-size:15px;font-variation-settings:"wdth" 88;letter-spacing:.01em}
+.labbar .models{border-color:var(--lab-line)}
+.labbar .models button{color:var(--lab-ink)}
+.labbar .models button+button{border-left-color:var(--lab-line)}
+.labbar .models button[aria-pressed="true"]{background:var(--lab-ink);color:var(--lab-bg)}
+.labbar .runs{color:var(--lab-muted)}
+.labbar .runs b{color:var(--lab-ink)}
+.labbar .runs .fresh{color:#FF8A80}
+@media (max-width:900px){.labbar .runs{margin-left:0;width:100%}}
+@media (max-width:700px){
+  .top{padding:10px 12px;gap:8px 10px}
+  .views{order:3;flex-basis:100%;margin:0 -12px;padding:0 12px}
+  .views .main{padding:5px 11px;font-size:14px}
+  .views .lab-btn{margin-left:6px}
+  .brand{font-size:21px}
+  .install{display:none}
+  .labbar{padding:8px 12px;gap:8px}
+  .lab-title{display:none}
+  .labbar .models{width:100%}
+  .labbar .models button{flex:1;padding:6px 4px;font-size:14px}
 }
-@media (max-width:420px){.views .models button{padding:6px 8px;font-size:14px}}
+@media (max-width:420px){.xs-hide{display:none}}
 @media (max-width:1100px){.charts{grid-template-columns:1fr}}
 </style>
 </head>
@@ -216,20 +230,25 @@ body.city-mode .theme{margin-left:auto}
 <header class="top">
   <a class="brand" href="#citta" id="brand" aria-label="Ventaglio: pagina iniziale"></a>
   <nav class="views" aria-label="Sezioni" id="views">
-    <div class="mains"><button class="main" data-view="citta" aria-pressed="true">La tua città</button><button class="main" data-view="radar" aria-pressed="false">Radar</button></div>
-    <span class="sep">Per appassionati</span>
-    <div class="models">
-      <button data-view="carte" aria-pressed="false">Carte</button>
-      <button data-view="confronto" aria-pressed="false">Confronto</button>
-      <button data-view="ensemble" aria-pressed="false">Ensemble</button>
-      <button data-view="localita" aria-pressed="false">Località</button>
-    </div>
+    <button class="main" data-view="citta" aria-pressed="true">La tua città</button>
+    <button class="main" data-view="radar" aria-pressed="false">Radar</button>
+    <button class="main" data-view="neve" aria-pressed="false">Neve</button>
+    <button class="main lab-btn" data-view="lab" aria-pressed="false">Appassionati<span class="xs-hide"> meteo</span></button>
   </nav>
-  <div class="runs" id="runs"></div>
   <button class="install" id="install" type="button" hidden>Installa</button>
   <button class="theme" id="theme" type="button" aria-label="Cambia tema chiaro o scuro" title="Tema chiaro o scuro">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button>
 </header>
+<div class="labbar" id="labbar" hidden>
+  <span class="lab-title">Appassionati meteo</span>
+  <nav class="models" id="labnav" aria-label="Sezioni per appassionati">
+    <button data-view="carte" aria-pressed="false">Cartografia</button>
+    <button data-view="confronto" aria-pressed="false">Confronto</button>
+    <button data-view="ensemble" aria-pressed="false">Ensemble</button>
+    <button data-view="localita" aria-pressed="false">Meteogrammi</button>
+  </nav>
+  <div class="runs" id="runs"></div>
+</div>
 
 <main id="cityview" hidden></main>
 
@@ -267,7 +286,7 @@ body.city-mode .theme{margin-left:auto}
 </div>
 
 <footer>
-  <a href="#come-funziona">Come funziona Ventaglio</a>. <a href="#ia-contro-fisica">IA contro fisica</a>. <a href="#neve">Neve e piste</a>.
+  <a href="#come-funziona">Come funziona Ventaglio</a>. <a href="#ia-contro-fisica">IA contro fisica</a>. <a href="#neve">Neve e piste</a>. <a href="#carte">Appassionati meteo</a>.
   Dati GFS e GEFS: NOAA/NCEP. Dati ECMWF, AIFS ed ENS: <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF Open Data</a>,
   licenza <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Dati ICON-EU: Deutscher Wetterdienst (DWD), opendata.dwd.de.
   Elenco dei comuni: dati ISTAT tramite Garda Informatica (licenza MIT).
@@ -471,7 +490,7 @@ function renderSide() {
     side.append(p);
     return;
   }
-  const c = section("Carte");
+  const c = section("Cartografia");
   c.id = "charts";
   const sel = el("select", { class: "chartSelect", "aria-label": "Carta" });
   for (const g of S.m.groups) {
@@ -564,8 +583,11 @@ function fixState() {
 }
 function update() {
   stop();
-  for (const b of $("views").querySelectorAll("button[data-view]")) b.setAttribute("aria-pressed", b.dataset.view === S.view);
   const city = CITY_VIEWS.includes(S.view);
+  if (!city) S.labView = S.view;
+  for (const b of document.querySelectorAll("#views button[data-view], #labnav button[data-view]"))
+    b.setAttribute("aria-pressed", b.dataset.view === S.view || (b.dataset.view === "lab" && !city));
+  $("labbar").hidden = city;
   document.body.classList.toggle("city-mode", city);
   $("cityview").hidden = !city;
   $("app").hidden = city;
@@ -891,12 +913,14 @@ async function start() {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 }
 
-$("views").addEventListener("click", (e) => {
+const pickView = (e) => {
   const b = e.target.closest("button[data-view]"); if (!b) return;
-  S.view = b.dataset.view;
+  S.view = b.dataset.view === "lab" ? (S.labView || "carte") : b.dataset.view;
   if (S.view === "citta" || S.view === "radar") S.cityId = S.cityId || Citta.remembered() || null;
   update();
-});
+};
+$("views").addEventListener("click", pickView);
+$("labnav").addEventListener("click", pickView);
 window.addEventListener("ventaglio:toast", (e) => toast(e.detail));
 // ---------- app installabile ----------
 if ("serviceWorker" in navigator) {

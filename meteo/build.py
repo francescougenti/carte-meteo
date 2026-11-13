@@ -281,6 +281,40 @@ def gh_output(**kw):
                 f.write(f"{k}={v}\n")
 
 
+def sample_age_h(public, name):
+    """Ore trascorse dalla corsa salvata in data/campioni/<name>.npz (None se il file manca o è rovinato)."""
+    path = os.path.join(public, "data", "campioni", f"{name}.npz")
+    try:
+        with np.load(path) as z:
+            run = dt.datetime.strptime(str(z["run"]), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except Exception:
+        return None
+    return (dt.datetime.now(UTC) - run).total_seconds() / 3600
+
+
+def ensure_extras(public):
+    """Ora per ora, mare e neve nei comprensori si rifanno con la generazione delle carte. Se mancano o sono vecchi
+    (prima pubblicazione, errore in un giro precedente), si recuperano qui con l'ultima corsa, scaricando solo quel che serve."""
+    jobs = [("icon-eu-orario", "icon-eu", 12, lambda m, r: orario.write(public, m, r, luoghi.active() + luoghi.cells(), log=log)),
+            ("ecmwf-orario", "ecmwf", 18, lambda m, r: orario.write(public, m, r, luoghi.active() + luoghi.cells(), log=log)),
+            ("gfs-orario", "gfs", 18, lambda m, r: orario.write(public, m, r, luoghi.active() + luoghi.cells(), log=log)),
+            ("ecmwf-mare", "ecmwf", 18, lambda m, r: mare.write(public, m, r, log=log)),
+            ("icon-eu-neve", "icon-eu", 12, lambda m, r: neve.write_standalone(public, m, r, log=log))]
+    for name, mid, max_h, job in jobs:
+        age = sample_age_h(public, name)
+        if age is not None and age <= max_h:
+            continue
+        try:
+            model = MODELS[mid]
+            run = model.latest()
+            if run is None:
+                continue
+            log(f"{name}: {'mancante' if age is None else f'vecchio di {age:.0f} h'}, lo recupero dalla corsa {run.time:%d/%m %H}Z")
+            job(model, run)
+        except Exception as e:
+            log(f"::warning::{name} non recuperato: {e}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--public", default="public", help="cartella del sito pubblicato")
@@ -332,6 +366,7 @@ def main(argv=None):
             traceback.print_exc()
     if updated:
         save_manifest(a.public, manifest)
+    ensure_extras(a.public)
     # pochi secondi: si ricalcola a ogni giro, così anche le correzioni al calcolo arrivano subito
     restore_state(a.public)
     try:
