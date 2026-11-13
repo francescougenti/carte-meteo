@@ -7,7 +7,7 @@ Sito meteo che si aggiorna da solo a ogni nuova corsa dei modelli, con due anime
 - **La tua città** (pagina iniziale), per tutti: la previsione di tutti i 7.894 comuni italiani per 10 giorni, ora per ora
   nei primi giorni, con quanto è sicura, quando conviene ricontrollarla e cosa è cambiato dall'ultima visita;
   in più il radar della pioggia e le allerte della Protezione Civile.
-- **Per appassionati**: carte in stile Meteociel, confronto tra modelli, ensemble e meteogrammi.
+- **Appassionati meteo**: cartografia in stile Meteociel, confronto tra modelli, ensemble e meteogrammi.
 
 ## La tua città
 
@@ -47,7 +47,7 @@ I file dei dati sono descritti in [docs/formato-dati.md](docs/formato-dati.md). 
 previsioni dei modelli e le temperature osservate negli aeroporti (METAR), per confrontare nei prossimi mesi
 i modelli fisici con quello a intelligenza artificiale, città per città.
 
-## Per appassionati
+## Appassionati meteo
 
 | Modello | Fonte | Fino a | Aree |
 |---|---|---|---|
@@ -62,7 +62,7 @@ i modelli fisici con quello a intelligenza artificiale, città per città.
 - **Carte (17):** geopotenziale 500 hPa e pressione, pressione e spessore 500/1000, temperatura a 850 hPa, 500 hPa e 2 m, theta-e 850 hPa, precipitazioni in 6 ore e cumulate, acqua precipitabile, nuvolosità, umidità a 700 hPa, quota dello zero termico e neve al suolo (solo Italia ed Europa), vento a 10 m, raffiche, corrente a getto a 250 hPa, CAPE. Lo zero termico di ECMWF e AIFS è calcolato dalle temperature sui livelli di pressione; GFS e ICON-EU lo forniscono già pronto. Se un modello non fornisce un campo (per esempio AIFS non dà raffiche e CAPE), quella carta manca solo per lui.
 - **Ensemble:** spaghetti delle isoipse 552 e 576 dam a 500 hPa, media e dispersione del geopotenziale.
 - **Località:** meteogrammi con tutti i modelli a confronto (temperatura a 2 m e 850 hPa, pioggia, vento e raffiche, pressione, nuvolosità, zero termico, neve) e pennacchi dell'ensemble (temperatura a 2 m e a 850 hPa, pioggia, pressione, geopotenziale) per 12 città.
-- **Sito:** sezioni Carte, Confronto (due modelli qualsiasi affiancati), Ensemble e Località; scadenze a passi di 6 ore, animazione, link condivisibili, aggiornamento automatico della pagina, tema chiaro e scuro.
+- **Sito:** area **Appassionati meteo**, separata da quella per tutti e con una sua barra scura: Cartografia, Confronto (due modelli qualsiasi affiancati), Ensemble e Meteogrammi; scadenze a passi di 6 ore, animazione, link condivisibili, aggiornamento automatico della pagina, tema chiaro e scuro.
 
 ## Come funziona
 
