@@ -144,11 +144,12 @@ function daySentence(d) {
   const w = windText(d.vento);
   if (w) parts.push(w);
   const n = d.neve, r = d.pioggia || {};
-  if (n && r.p >= 30 && n.quota <= 1500 && !["neve"].includes(d.codice) && C.data && (C.data.alt == null || n.quota > C.data.alt))
-    parts.push(`neve oltre i ${num(n.quota)} m`);
+  if (n && r.p >= 30 && snowNear(n, C.data) && !["neve"].includes(d.codice)) parts.push(`neve oltre i ${num(n.quota)} m`);
   if (n && n.suolo >= 1) parts.push(`${num(n.suolo)} cm di neve al suolo`);
   return parts.join(", ") + ".";
 }
+/** La quota neve interessa solo se la neve arriva vicino al comune: non più di 700 m sopra la sua quota. */
+const snowNear = (n, data) => !!(n && data && data.alt != null && n.quota > data.alt && n.quota - data.alt <= 700);
 function checkWhen(iso, today) {
   if (iso <= today) return "stasera";
   if (iso === addDays(today, 1)) return "domani sera";
@@ -276,7 +277,7 @@ function snowBox(data) {
   const item = (ic, lab, big, small, cls = "") => `<div class="sb-item ${cls}">${ic}<div><span class="sb-lab">${lab}</span><b>${big}</b>${small ? `<small>${small}</small>` : ""}</div></div>`;
   if (!near.length) {
     return `<section class="snowbox"><div class="sb-head"><h2>Neve</h2></div><div class="sb-grid">
-      ${item(IC_VALLE, "Al suolo", cm(suolo), `a ${num(data.alt)} m, stima dei modelli`)}</div></section>`;
+      ${item(IC_VALLE, "Neve al suolo", cm(suolo), `a ${num(data.alt)} m, stima dei modelli`)}</div></section>`;
   }
   const { r, d } = near[0];
   const n = r.neve || [], m = r.modello || {};
@@ -301,8 +302,8 @@ function snowBox(data) {
     <div class="sb-head"><h2>Neve e piste</h2><span class="sb-name">${esc(r.nome)}${here ? "" : `, a ${num(d)} km`}</span><span class="sk-state">${SKI_STATE[r.stato] || ""}</span>
       ${r.valanghe ? `<span class="sk-av av-${r.valanghe}">Valanghe: ${r.valanghe} ${AVALANCHE[r.valanghe]}</span>` : ""}</div>
     <div class="sb-grid">
-      ${item(IC_VALLE, "A valle", valle[0], valle[1])}
-      ${item(IC_CIMA, "In cima", cima[0], cima[1])}
+      ${item(IC_VALLE, "Neve al suolo", valle[0], valle[1])}
+      ${item(IC_CIMA, "Neve in cima", cima[0], cima[1])}
       ${item(IC_PISTE, "Piste", piste[0], piste[1])}
       ${item(IC_IMPIANTI, "Impianti", imp[0], imp[1])}
     </div>
@@ -619,7 +620,7 @@ function whyBlock(d, prevName) {
   if (!text) return "";
   const ch = chartFor(r.carta, r.ora);
   const at = `${dayName(romeDate(Date.parse(r.ora)))} alle ${fClock.format(new Date(r.ora))}`;
-  const fig = ch ? `<figure class="why-map"><a href="${ch.hash}" aria-label="Apri la carta tra quelle per appassionati">
+  const fig = ch ? `<figure class="why-map"><a href="${ch.hash}" aria-label="Apri la carta nella cartografia per appassionati">
       <img src="${ch.url}" loading="lazy" alt="Carta: ${esc(ch.label)}, ${esc(at)} (${esc(ch.model)})"></a>
       <figcaption>${esc(ch.label)}${r.carta === "prec6" ? " fino a" : ","} ${esc(at)}, modello ${esc(ch.model)}. <a href="${ch.hash}">Apri la carta</a></figcaption></figure>` : "";
   return `<h3>Perché</h3><p>${esc(text)}</p>${fig}`;
@@ -685,7 +686,7 @@ function chartsLink(d) {
   const lead = Math.round((noon - Date.parse(E.run)) / 36e5 / 6) * 6;
   if (lead < 0) return "";
   const chart = (d.pioggia?.p ?? 0) >= 30 ? "prec6" : "t850";
-  return `<a class="to-charts" href="#carte/ecmwf/italia/${chart}/${lead}">Guarda le carte di ${esc(dayName(d.data))} per appassionati</a>`;
+  return `<a class="to-charts" href="#carte/ecmwf/italia/${chart}/${lead}">Guarda la cartografia di ${esc(dayName(d.data))}</a>`;
 }
 
 const ARROW = (dir) => `<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" class="w-arr" style="transform:rotate(${Math.round(dir + 180)}deg)"><path d="M6 1.2 9.6 10 6 8 2.4 10z"/></svg>`;
@@ -733,7 +734,7 @@ function facts(d, data) {
   const v = d.vento;
   if (v && v.kmh != null) out.push(["Vento", `${v.nome}, ${num(v.kmh)} km/h${v.raffiche >= 40 ? `, raffiche fino a ${num(Math.round(v.raffiche / 5) * 5)}` : ""}`]);
   const n = d.neve, p = d.pioggia?.p ?? 0;
-  if (n && p >= 25 && n.quota <= 2000) out.push(["Quota neve", `circa ${num(n.quota)} m`]);
+  if (n && p >= 25 && snowNear(n, data)) out.push(["Quota neve", `circa ${num(n.quota)} m`]);
   if (d.mare && data && data.mare_km != null) out.push([data.mare_km >= 3 ? `Mare (a ${num(data.mare_km)} km)` : "Mare", seaText(d.mare)]);
   return `<dl class="facts">${out.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`;
 }
@@ -770,7 +771,7 @@ function detail(data, today) {
 }
 function chartsLinkBlock(d) {
   const l = chartsLink(d);
-  return l ? `<h3>Le carte</h3><p>${l}</p>` : "";
+  return l ? `<h3>La cartografia</h3><p>${l}</p>` : "";
 }
 
 function search(placeholder = "Cerca il tuo comune", extra = "") {
@@ -1090,7 +1091,7 @@ function infoPage() {
       Ricorda anche cosa avevi visto all'ultima visita: questa informazione resta solo nel tuo browser, non viene inviata a nessuno, e lo stesso vale per la posizione se usi "Vicino a me".</p>
     <h2>I limiti</h2>
     <p>I modelli hanno maglie di 7–25 km: valli strette, coste e temporali locali possono andare diversamente. Le temperature del giorno sono stimate dai valori ogni 6 ore e dai massimi e minimi dei modelli quando ci sono.
-      Per chi vuole vedere tutto c'è la parte <a href="#carte">per appassionati</a> con le carte, i confronti e gli ensemble.</p>
+      Per chi vuole vedere tutto c'è l'area <a href="#carte">Appassionati meteo</a>, con la cartografia dei modelli, i confronti, gli ensemble e i meteogrammi.</p>
     <h2>Tutti i comuni</h2>
     <p>I capoluoghi di provincia hanno una previsione calcolata esattamente nel loro punto. Gli altri comuni sono raggruppati in zone di circa 25 km, la maglia dei modelli globali:
       la previsione si calcola una volta per zona e il sito la adatta alla quota del tuo comune, con temperature più basse di circa 6,5 gradi ogni 1.000 metri
