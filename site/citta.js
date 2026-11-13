@@ -1004,10 +1004,7 @@ function homePage() {
     <p class="lede">Il meteo del tuo comune e quanto è sicuro. Più il ventaglio di un giorno è chiuso, più puoi fidarti della previsione.</p>
     ${search("Cerca il tuo comune")}
     ${favBlock}
-    <div class="cards2">
-      <a class="radar-card" href="#radar">${RADAR_ICON}<span><b>Radar della pioggia</b>Dove piove adesso in Italia, dalla Protezione Civile</span></a>
-      <a class="radar-card" href="#neve">${SNOW_ICON}<span><b>Neve e piste</b>Comprensori aperti, impianti e neve a valle e in quota</span></a>
-    </div>
+    <a class="radar-card" href="#radar">${RADAR_ICON}<span><b>Radar della pioggia</b>Dove piove adesso in Italia, dalla Protezione Civile</span></a>
     <h2 class="regs-title">I capoluoghi</h2>
     <div class="regs">${lists}</div>
     <p class="explain">Per ogni giorno confrontiamo quattro modelli e 81 scenari dell'atmosfera, e ti diciamo quando conviene ricontrollare. <a href="#come-funziona">Come funziona</a></p>

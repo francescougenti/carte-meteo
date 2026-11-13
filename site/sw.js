@@ -2,10 +2,11 @@
    - pagine, stili e script: subito dalla memoria, aggiornati in sottofondo
    - dati (data/): prima dalla rete, dalla memoria solo se la rete manca
    - carte (maps/): dalla memoria se già viste, al massimo le ultime 80 */
-const SHELL = "ventaglio-pagine-v7";
+const SHELL = "ventaglio-pagine-v8";
 const DATA = "ventaglio-dati-v1";
 const MAPS = "ventaglio-carte-v1";
-const SHELL_FILES = ["./", "citta.js", "citta.css", "radar.js", "icona.svg", "vendor/chart.umd.js", "manifest.webmanifest"];
+// gli script hanno la versione nell'indirizzo (?v=): una pagina nuova non può mai prendere uno script vecchio
+const SHELL_FILES = ["./", "citta.js?v=8", "citta.css?v=8", "radar.js?v=8", "icona.svg", "vendor/chart.umd.js", "manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
   // "reload": si scaricano davvero dal sito, non dalla memoria del browser (altrimenti può restare un file vecchio)
