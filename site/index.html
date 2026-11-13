@@ -185,6 +185,7 @@ footer a{color:inherit}
 .views .main{border:1.5px solid var(--ink);background:none;border-radius:6px;padding:6px 14px;font-weight:600;cursor:pointer;
   font-variation-settings:"wdth" 90}
 .views .main[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.mains{display:inline-flex;gap:6px}
 .views .sep{font-size:13px;color:var(--muted)}
 .theme{margin-left:12px;width:38px;height:38px;border:1px solid var(--rule);background:var(--panel);border-radius:50%;cursor:pointer;
   display:grid;place-items:center;color:var(--ink);flex:none}
@@ -200,7 +201,10 @@ body.city-mode .theme{margin-left:auto}
   .views .models button{padding:6px 11px}}
 @media (max-width:600px){
   .top{padding:10px 12px 10px;gap:10px}
-  .views .main{position:absolute;top:11px;right:58px;padding:5px 12px}
+  .views .mains{position:absolute;top:11px;right:58px}
+  .views .main{padding:5px 10px;font-size:14px}
+  .brand{font-size:20px}
+  .brand svg{width:28px}
   .theme{top:9px}
 }
 @media (max-width:420px){.views .models button{padding:6px 8px;font-size:14px}}
@@ -211,7 +215,7 @@ body.city-mode .theme{margin-left:auto}
 <header class="top">
   <a class="brand" href="#citta" id="brand" aria-label="Ventaglio: pagina iniziale"></a>
   <nav class="views" aria-label="Sezioni" id="views">
-    <button class="main" data-view="citta" aria-pressed="true">La tua città</button>
+    <div class="mains"><button class="main" data-view="citta" aria-pressed="true">La tua città</button><button class="main" data-view="radar" aria-pressed="false">Radar</button></div>
     <span class="sep">Per appassionati</span>
     <div class="models">
       <button data-view="carte" aria-pressed="false">Carte</button>
@@ -271,6 +275,7 @@ body.city-mode .theme{margin-left:auto}
 </footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="citta.js"></script>
+<script src="radar.js"></script>
 
 <script>
 (() => {
@@ -279,7 +284,7 @@ const $ = (id) => document.getElementById(id);
 const H = 36e5;
 const COLORS = { gfs: "#0B4EA2", ecmwf: "#C8102E", aifs: "#7A3FB0", "icon-eu": "#16834A" };
 const ENS_DET = { gefs: "gfs", "ecmwf-ens": "ecmwf" };
-const CITY_VIEWS = ["citta", "info", "ia"];
+const CITY_VIEWS = ["citta", "info", "ia", "radar"];
 const S = { m: null, view: "citta", cityId: null, station: null, model: "gfs", a: "gfs", b: "ecmwf", ens: "gefs", product: "spaghetti",
             region: "italia", chart: "z500", valid: null, city: "ostuni", plume: "gefs", playing: false, timer: null };
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -563,6 +568,7 @@ function update() {
   document.body.classList.toggle("city-mode", city);
   $("cityview").hidden = !city;
   $("app").hidden = city;
+  if (!city) Radar.close();
   if (city) { showCity(); return; }
   if (!S.m) {
     $("app").innerHTML = `<div class="empty"><h2>Le carte non sono ancora pronte</h2>
@@ -789,7 +795,9 @@ async function showLoc() {
 // ---------- la tua città ----------
 async function showCity() {
   const view = S.view;
-  if (view === "info") Citta.info();
+  if (view !== "radar") Radar.close();
+  if (view === "radar") await Radar.open($("cityview"), await Citta.place(S.cityId));
+  else if (view === "info") Citta.info();
   else if (view === "ia") await Citta.ranking(S.station);
   else if (S.cityId) { if (!(await Citta.open(S.cityId))) { S.cityId = null; await Citta.home(); } }
   else await Citta.home();
@@ -801,6 +809,7 @@ function writeHash() {
   let h;
   if (CITY_VIEWS.includes(S.view)) {
     h = S.view === "info" ? "#come-funziona" : S.view === "ia" ? `#ia-contro-fisica${S.station ? "/" + S.station : ""}`
+      : S.view === "radar" ? `#radar${S.cityId ? "/" + S.cityId : ""}`
       : S.cityId ? `#citta/${S.cityId}` : "#citta";
     if (location.hash !== h) history.replaceState(null, "", h);
     return;
@@ -818,6 +827,7 @@ function readHash() {
   if (!parts.length) { S.view = "citta"; S.cityId = Citta.remembered() || null; return; }
   if (parts[0] === "citta") { S.view = "citta"; S.cityId = parts[1] || null; return; }
   if (parts[0] === "come-funziona") { S.view = "info"; return; }
+  if (parts[0] === "radar") { S.view = "radar"; S.cityId = parts[1] || S.cityId || Citta.remembered() || null; return; }
   if (parts[0] === "ia-contro-fisica") { S.view = "ia"; S.station = parts[1] || null; return; }
   if (!S.m) { S.view = parts[0]; return; }
   let lead;
@@ -881,9 +891,10 @@ async function start() {
 $("views").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-view]"); if (!b) return;
   S.view = b.dataset.view;
-  if (S.view === "citta") S.cityId = S.cityId || Citta.remembered() || null;
+  if (S.view === "citta" || S.view === "radar") S.cityId = S.cityId || Citta.remembered() || null;
   update();
 });
+window.addEventListener("ventaglio:toast", (e) => toast(e.detail));
 // ---------- app installabile ----------
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => { /* senza: il sito va lo stesso */ }));

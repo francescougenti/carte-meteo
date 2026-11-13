@@ -116,6 +116,29 @@ def write_run(run, places, ens=True):
                              [v.strftime("%Y-%m-%dT%H:%M:%SZ") for v in valids], series)
 
 
+def write_hourly(run, places):
+    """Campioni ora per ora (ICON-EU ogni ora, ECMWF e GFS ogni 3 ore) con la pioggia cumulata."""
+    ids = [p["id"] for p in places]
+    for sid, every, last in (("icon-eu", 1, 78), ("ecmwf", 3, 144), ("gfs", 3, 120)):
+        bias = DET[sid]
+        hs = list(range(0, last + 1, every))
+        valids = [run + dt.timedelta(hours=x) for x in hs]
+        series = {n: np.full((len(places), len(hs)), np.nan, np.float32) for n in ("t2m", "tp_total", "tcc", "u10", "v10")}
+        for i, p in enumerate(places):
+            cum = 0.0
+            for j, (hh, t) in enumerate(zip(hs, valids)):
+                x = truth(p, t, shift=bias * 8 * hh / 96, tbias=bias)
+                if hh:
+                    cum += sum(truth(p, t - dt.timedelta(hours=k), shift=bias * 8 * hh / 96)["tp6"] / 6
+                               for k in range(every))
+                series["t2m"][i, j] = x["t2m"] - 0.0065 * (p["alt"] * 0.6 + 90 - p["alt"])
+                series["tp_total"][i, j] = cum
+                for n in ("tcc", "u10", "v10"):
+                    series[n][i, j] = x[n]
+        points.write_samples(PUB, f"{sid}-orario", run.strftime("%Y-%m-%dT%H:%M:%SZ"), ids, hs,
+                             [v.strftime("%Y-%m-%dT%H:%M:%SZ") for v in valids], series)
+
+
 def main():
     places = luoghi.sample_points()
     for p in places:
@@ -125,6 +148,8 @@ def main():
     while run <= LAST:
         print("corsa simulata", run.strftime("%d/%m %HZ"))
         write_run(run, places)
+        if run == LAST:
+            write_hourly(run, [p for p in places if not p["id"].startswith("st-")])
         citta.build(PUB, now=run + dt.timedelta(hours=5))
         run += dt.timedelta(hours=6)
 

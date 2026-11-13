@@ -415,6 +415,168 @@ def place_day(place, day, sources, now):
 
 
 # --------------------------------------------------------------------------------------
+# Ora per ora
+# --------------------------------------------------------------------------------------
+HOURLY_W = {"ecmwf": 0.40, "icon-eu": 0.30, "gfs": 0.30}
+HOURLY_DAYS = 3      # giorni ora per ora (oggi compreso); poi ogni 3 ore
+HOURLY_LAST = 6      # ultimo giorno con le righe orarie/triorarie
+
+
+def load_hourly(public, sources):
+    out = {}
+    for sid in HOURLY_W:
+        p = os.path.join(public, "data", "campioni", f"{sid}-orario.npz")
+        if not os.path.exists(p):
+            continue
+        try:
+            s = Source(sid, p)
+        except Exception:
+            continue
+        main = sources.get(sid)
+        if main is not None and main.orog is not None:
+            s.orog = np.array([main.orog[main.row[pid]] if pid in main.row else np.nan for pid in s.ids], np.float32)
+        s.t = np.array([v.timestamp() for v in s.valid], np.float64)
+        out[sid] = s
+    return out
+
+
+def series_at(src, var, pid, tt):
+    """Valori interpolati nel tempo (secondi UTC tt); NaN fuori dall'intervallo coperto."""
+    a = src.vars.get(var)
+    i = src.row.get(pid)
+    if a is None or i is None:
+        return None
+    v = a[i]
+    m = np.isfinite(v)
+    if m.sum() < 2:
+        return None
+    return np.interp(tt, src.t[m], v[m], left=np.nan, right=np.nan)
+
+
+def sun_times(lat, lon, day):
+    """Alba e tramonto (UTC) con le formule approssimate della NOAA; None vicino ai poli."""
+    n = day.timetuple().tm_yday
+    g = 2 * math.pi / 365 * (n - 1)
+    eq = 229.18 * (0.000075 + 0.001868 * math.cos(g) - 0.032077 * math.sin(g) - 0.014615 * math.cos(2 * g)
+                   - 0.040849 * math.sin(2 * g))
+    dec = (0.006918 - 0.399912 * math.cos(g) + 0.070257 * math.sin(g) - 0.006758 * math.cos(2 * g)
+           + 0.000907 * math.sin(2 * g) - 0.002697 * math.cos(3 * g) + 0.00148 * math.sin(3 * g))
+    la = math.radians(lat)
+    c = math.cos(math.radians(90.833)) / (math.cos(la) * math.cos(dec)) - math.tan(la) * math.tan(dec)
+    if not -1 <= c <= 1:
+        return None
+    ha = math.degrees(math.acos(c))
+    base = dt.datetime(day.year, day.month, day.day, tzinfo=UTC)
+    rise = base + dt.timedelta(minutes=720 - 4 * (lon + ha) - eq)
+    sset = base + dt.timedelta(minutes=720 - 4 * (lon - ha) - eq)
+    return rise, sset
+
+
+def hour_code(mm_h, nubi, kind):
+    if mm_h is not None and mm_h >= 0.1:
+        if kind == "neve":
+            return "neve"
+        if kind == "mista":
+            return "pioggia-neve"
+        return "pioggia-forte" if mm_h >= 4 else "pioggia" if mm_h >= 0.3 else "rovesci"
+    n = 50 if nubi is None or math.isnan(nubi) else nubi
+    return "sereno" if n < 20 else "poco-nuvoloso" if n < 50 else "nuvoloso" if n < 80 else "coperto"
+
+
+def hourly(place, days, hsrc, sources, now):
+    """Aggiunge ai giorni le righe ora per ora (poi ogni 3 ore), alba e tramonto e le ore di pioggia."""
+    if not days:
+        return
+    pid = place["id"]
+    first = dt.datetime.fromisoformat(days[0]["data"])
+    start = now.replace(minute=0, second=0, microsecond=0)
+    tlist = []
+    for k in range(HOURLY_LAST):
+        day = first.date() + dt.timedelta(days=k)
+        step = 1 if k < HOURLY_DAYS else 3  # poi sulle scadenze dei modelli, ogni 3 ore UTC
+        t = dt.datetime(day.year, day.month, day.day, tzinfo=ROME).astimezone(UTC)
+        t += dt.timedelta(hours=(-t.hour) % step)
+        while t.astimezone(ROME).date() == day:
+            if t >= start:
+                tlist.append((t, step))
+            t += dt.timedelta(hours=step)
+    if not tlist:
+        return
+    tt = np.array([t.timestamp() for t, _ in tlist])
+    prev = np.array([(t - dt.timedelta(hours=st)).timestamp() for t, st in tlist])
+    comp = {}
+    for sid, s in hsrc.items():
+        t2 = series_at(s, "t2m", pid, tt)
+        cum = series_at(s, "tp_total", pid, tt)
+        cum0 = series_at(s, "tp_total", pid, prev)
+        comp[sid] = dict(
+            t=None if t2 is None else t2 + corr(s, pid, place),
+            mm=None if cum is None or cum0 is None else np.maximum(cum - cum0, 0),
+            nubi=series_at(s, "tcc", pid, tt), u=series_at(s, "u10", pid, tt), v=series_at(s, "v10", pid, tt))
+
+    def mix(key):
+        num, den = np.zeros(len(tt)), np.zeros(len(tt))
+        for sid, c in comp.items():
+            a = c[key]
+            if a is None:
+                continue
+            ok = np.isfinite(a)
+            num[ok] += HOURLY_W[sid] * a[ok]
+            den[ok] += HOURLY_W[sid]
+        with np.errstate(invalid="ignore"):
+            return np.where(den > 0, num / np.where(den > 0, den, 1), np.nan)
+    T, MM, NB, U, V = mix("t"), mix("mm"), mix("nubi"), mix("u"), mix("v")
+    # zero termico (ogni 6 ore) per decidere tra pioggia e neve
+    fz = [series_at(sources[sid], "fzl", pid, tt) for sid in DET if sid in sources and hasattr(sources[sid], "t")]
+    fz = [f for f in fz if f is not None]
+    FZ = np.nanmean(np.stack(fz), axis=0) if fz else np.full(len(tt), np.nan)
+    by_day = {d["data"]: d for d in days}
+    for d in days:
+        day = dt.date.fromisoformat(d["data"])
+        st = sun_times(place["lat"], place["lon"], day)
+        if st:
+            d["alba"], d["tramonto"] = (x.astimezone(ROME).strftime("%H:%M") for x in st)
+    rows = {}
+    for j, (t, step) in enumerate(tlist):
+        if not np.isfinite(T[j]) and not np.isfinite(MM[j]):
+            continue
+        loc = t.astimezone(ROME)
+        d = by_day.get(loc.date().isoformat())
+        if d is None:
+            continue
+        mm = None if not np.isfinite(MM[j]) else float(MM[j])
+        kind = snow_kind(None if not np.isfinite(FZ[j]) else float(FZ[j]), place.get("alt"),
+                         None if not np.isfinite(T[j]) else float(T[j])) if (mm or 0) >= 0.1 else None
+        kmh = math.hypot(U[j], V[j]) * 3.6 if np.isfinite(U[j]) and np.isfinite(V[j]) else None
+        deg = wind_name(U[j], V[j])[0] if kmh is not None else None
+        st = sun_times(place["lat"], place["lon"], loc.date())
+        night = bool(st and not (st[0] <= t <= st[1]))
+        rows.setdefault(d["data"], []).append(
+            [loc.hour, rnd(T[j], 0) if np.isfinite(T[j]) else None, rnd(mm), rnd(NB[j], 0) if np.isfinite(NB[j]) else None,
+             rnd(kmh, 0), rnd(deg, 0), hour_code(None if mm is None else mm / step, NB[j], kind), int(night), step])
+    for date, rr in rows.items():
+        d = by_day[date]
+        d["ore"] = rr
+        # quando piove: ore consecutive (anche con un'ora di pausa) con almeno 0,2 mm all'ora
+        wins, cur = [], None
+        for r in rr:
+            wet = r[2] is not None and r[2] / r[8] >= 0.2
+            if wet:
+                if cur and r[0] - cur[1] <= 1:
+                    cur[1] = r[0] + r[8]
+                    cur[2] += r[2]
+                else:
+                    cur = [r[0], r[0] + r[8], r[2]]
+                    wins.append(cur)
+        wins = [w for w in wins if w[2] >= 0.5]
+        if (d["pioggia"].get("p") or 0) < 30 and (d["pioggia"].get("mm") or 0) < RAIN_DAY:
+            wins = []  # il giorno nel complesso è asciutto: niente orari di pioggia che lo contraddicano
+        if wins:
+            wins = sorted(sorted(wins, key=lambda w: -w[2])[:2])
+            d["pioggia_ore"] = [[w[0], min(w[1], 24), rnd(w[2])] for w in wins]
+
+
+# --------------------------------------------------------------------------------------
 # Il perché: la causa principale del tempo di ogni giorno, con la carta che la mostra
 # --------------------------------------------------------------------------------------
 def at_iso(day, hour):
@@ -551,6 +713,16 @@ def build(public, now=None, log=print):
     for p in points:
         all_days.append([place_day(p, today + dt.timedelta(days=k), sources, now) for k in range(DAYS)])
     G = growth(all_days)
+    hsrc = load_hourly(public, sources)
+    for s in sources.values():
+        if not s.ens:
+            s.t = np.array([v.timestamp() for v in s.valid], np.float64)
+    for p, days in zip(points, all_days):
+        try:
+            hourly(p, [d for d in days if d is not None], hsrc, sources, now)
+        except Exception as e:  # l'ora per ora è un di più: non deve fermare la previsione
+            log(f"  ! ora per ora {p['id']}: {e}")
+            break
     runs = {sid: iso(s.run) for sid, s in sources.items()}
     members = sum(next(iter(s.vars.values())).shape[1] for s in sources.values() if s.ens and s.vars)
     index = []

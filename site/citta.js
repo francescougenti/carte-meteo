@@ -11,10 +11,14 @@ const LABEL = {
   rovesci: "Possibili piogge", pioggia: "Pioggia", "pioggia-forte": "Pioggia forte", temporale: "Temporali",
   neve: "Neve", "pioggia-neve": "Pioggia e neve",
 };
-const STATE = { deciso: "Deciso", quasi: "Quasi deciso", aperto: "Ancora aperto" };
+const STATE = { deciso: "Ventaglio chiuso", quasi: "Ventaglio socchiuso", aperto: "Ventaglio aperto" };
+const SURE = { deciso: "previsione sicura", quasi: "abbastanza sicura", aperto: "ancora incerta" };
+const MOTTO = "Ventaglio chiuso, con il tempo stai al sicuro.";
+const RISK = { idraulico: "rischio idraulico", temporali: "temporali", idrogeologico: "rischio idrogeologico" };
+const LEVEL = ["", "gialla", "arancione", "rossa"];
 const FASCE = ["Notte", "Mattina", "Pomeriggio", "Sera"];
 
-const C = { index: null, comuni: null, data: null, day: 0, root: null, go: null, loading: null };
+const C = { index: null, comuni: null, data: null, day: 0, root: null, go: null, loading: null, alerts: null, more: false };
 const ARTICLE = { Tramontana: "la", Grecale: "il", Levante: "il", Scirocco: "lo", Ostro: "l'", Libeccio: "il", Ponente: "il", Maestrale: "il" };
 const CARD = ["nord", "nord-est", "est", "sud-est", "sud", "sud-ovest", "ovest", "nord-ovest"];
 const ORIGIN = ["dal Nord Europa", "dai Balcani", "dall'Europa dell'Est", "dal Mediterraneo orientale", "dall'Africa",
@@ -133,13 +137,9 @@ function windText(v) {
 }
 function daySentence(d) {
   const parts = [LABEL[d.codice] || "–"];
-  const r = d.pioggia || {};
-  const k = r.scenari ?? r.futuri;
-  if (k != null && r.p > 15 && r.p < 85 && ["rovesci", "pioggia", "pioggia-forte", "temporale", "neve", "pioggia-neve"].includes(d.codice))
-    parts[0] += ` (piove in ${k} scenari su ${r.su})`;
   const w = windText(d.vento);
   if (w) parts.push(w);
-  const n = d.neve;
+  const n = d.neve, r = d.pioggia || {};
   if (n && r.p >= 30 && n.quota <= 1500 && !["neve"].includes(d.codice) && C.data && (C.data.alt == null || n.quota > C.data.alt))
     parts.push(`neve oltre i ${num(n.quota)} m`);
   if (n && n.suolo >= 1) parts.push(`${num(n.suolo)} cm di neve al suolo`);
@@ -150,30 +150,91 @@ function checkWhen(iso, today) {
   if (iso === addDays(today, 1)) return "domani sera";
   return `${fWeek.format(dateObj(iso))} sera`;
 }
-function rainFact(r) {
-  const k = r.scenari ?? r.futuri, n = r.su;
-  if (k == null) return "";
-  if (k === n) return `piove in tutti gli ${n} scenari`;
-  if (k === 0) return `asciutto in tutti gli ${n} scenari`;
-  return r.p >= 50 ? `piove in ${k} scenari su ${n}` : `asciutto in ${n - k} scenari su ${n}`;
+/** Probabilità a parole (al femminile: pioggia, neve). */
+function chance(p, many) {
+  if (p == null) return "";
+  const w = p >= 90 ? ["quasi certa", "quasi certe"] : p >= 70 ? ["molto probabile", "molto probabili"] : p >= 50 ? ["probabile", "probabili"]
+    : p >= 25 ? ["possibile", "possibili"] : p >= 10 ? ["poco probabile", "poco probabili"] : ["improbabile", "improbabili"];
+  return w[many ? 1 : 0];
 }
-function certaintyText(d, today) {
-  const u = d.incertezza || {}, r = d.pioggia || {};
-  const range = d.max_f ? `${deg(d.max_f[0])} e ${deg(d.max_f[1])}` : "";
-  if (u.stato === "deciso") {
-    const facts = [rainFact(r), range ? `massima tra ${range}` : ""].filter(Boolean);
-    return `Gli scenari sono d'accordo: ${facts.join(", ")}.`;
+const mmText = (v) => (v == null ? "" : v < 0.05 ? "0 mm" : v < 9.95 ? `${v.toFixed(1).replace(".", ",").replace(",0", "")} mm` : `${Math.round(v)} mm`);
+const at = (h) => (h % 24 === 0 ? "mezzanotte" : h === 1 ? "l'1" : `le ${h}`);
+/** Le ore di pioggia: "tra le 15 e le 18", "quasi tutto il giorno". */
+function hoursText(wins) {
+  if (!wins || !wins.length) return "";
+  return wins.map(([a, b]) => (a <= 1 && b >= 23 ? "tutto il giorno" : b - a >= 16 ? "quasi tutto il giorno" : `tra ${at(a)} e ${at(b)}`)).join(" e ");
+}
+function rainNoun(d) {
+  return d.codice === "neve" ? ["Neve", false] : d.codice === "pioggia-neve" ? ["Pioggia e neve", true] : ["Pioggia", false];
+}
+/** "Pioggia molto probabile, 6 mm, tra le 15 e le 18" */
+function rainText(d, hours = true) {
+  const r = d.pioggia || {};
+  const p = r.p ?? (r.mm == null ? null : r.mm >= 1 ? 60 : 0);
+  if (p == null) return "";
+  const [noun, many] = rainNoun(d);
+  const parts = [`${noun} ${chance(p, many)}`];
+  if (p >= 25 && r.mm >= 0.1) parts.push(mmText(r.mm));
+  let wins = d.pioggia_ore;
+  if (wins && d.data === romeDate()) {  // oggi contano solo le ore che devono ancora venire
+    const now = hourNow();
+    wins = wins.filter((w) => w[1] > now).map((w) => [Math.max(w[0], now), w[1], w[2]]);
   }
-  const k = r.scenari ?? r.futuri;
-  let t = u.motivo === "pioggia" && k != null
-    ? `Gli scenari si dividono sulla pioggia: piove in ${k} su ${r.su}.`
-    : d.max_f ? `La massima può andare da ${deg(d.max_f[0])} a ${deg(d.max_f[1])}.` : "";
-  if (u.fino_all_ultimo) t += ` Potrebbe restare incerto fino all'ultimo: ricontrolla ${checkWhen(u.ricontrolla, today)} e la mattina stessa.`;
-  else if (u.ricontrolla) {
-    const a = u.anticipo === 1 ? "il giorno prima" : `${u.anticipo} giorni prima`;
-    t += ` Di solito un giorno così si decide ${a}: ricontrolla ${checkWhen(u.ricontrolla, today)}.`;
-  }
+  const h = hours && p >= 25 ? hoursText(wins) : "";
+  if (h) parts.push(h);
+  return parts.join(", ");
+}
+/** Cosa resta da chiarire e quando ricontrollare (vuoto se la previsione è sicura). */
+function sureText(d, today) {
+  const u = d.incertezza || {};
+  if ((u.stato || "quasi") === "deciso") return "";
+  let t = u.motivo === "pioggia" ? "Non è ancora chiaro se pioverà." : d.max_f ? `La massima può andare da ${deg(d.max_f[0])} a ${deg(d.max_f[1])}.` : "";
+  if (u.fino_all_ultimo) t += ` Può restare incerta fino all'ultimo: ricontrolla ${checkWhen(u.ricontrolla, today)}.`;
+  else if (u.ricontrolla) t += ` Ricontrolla ${checkWhen(u.ricontrolla, today)}.`;
   return t.trim();
+}
+function stateLine(d, today, size = 34) {
+  const st = d.incertezza?.stato || "quasi";
+  const more = sureText(d, today);
+  return `<p class="state s-${st}">${fan(st, size)}<span><b>${STATE[st]}</b>: ${SURE[st]}.${more ? ` <span class="more-t">${esc(more)}</span>` : ""}</span></p>`;
+}
+
+// ---------- allerte della Protezione Civile ----------
+async function loadAlerts() {
+  if (C.alerts === null || Date.now() - C.alertsAt > 10 * 60e3) {
+    try { C.alerts = await getJSON(`data/allerte.json?u=${encodeURIComponent((C.index && C.index.aggiornato) || Date.now())}`); }
+    catch (e) { C.alerts = C.alerts || false; }
+    C.alertsAt = Date.now();
+  }
+  return C.alerts;
+}
+const listIt = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} e ${a[a.length - 1]}`);
+/** Allerta del comune per un giorno: livello (1 gialla, 2 arancione, 3 rossa) e frase. */
+function alertOf(id, iso) {
+  const A = C.alerts;
+  if (!A || !A.comuni || A.comuni[id] == null) return null;
+  const z = A.zone[A.comuni[id]];
+  const lv = !z ? null : iso === A.oggi ? z.oggi : iso === A.domani ? z.domani : null;
+  if (!lv) return null;
+  const max = Math.max(...lv);
+  if (!max) return null;
+  const parts = [];
+  for (let k = max; k >= 1; k--) {
+    const risks = A.rischi.filter((r, i) => lv[i] === k).map((r) => RISK[r] || r);
+    if (risks.length) parts.push(`${parts.length ? LEVEL[k] : "allerta " + LEVEL[k]} per ${listIt(risks)}`);
+  }
+  return { level: max, text: parts.join(", "), zona: z.nome };
+}
+function alertBanner(data, today) {
+  const rows = [today, addDays(today, 1)].map((iso) => [iso, alertOf(data.id, iso)]).filter(([, a]) => a);
+  if (!rows.length) return "";
+  const top = Math.max(...rows.map(([, a]) => a.level));
+  const A = C.alerts;
+  const items = rows.map(([iso, a]) => `<li><b>${cap(dayName(iso, today))}</b>: ${esc(a.text)}.</li>`).join("");
+  return `<section class="alert al-${top}" aria-label="Allerte della Protezione Civile">
+    <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M12 2.8 22.5 21h-21z" class="al-tri"/><path d="M12 9v5.6M12 17.4v.4" class="al-mark"/></svg>
+    <div><ul>${items}</ul><p>Zona ${esc(rows[0][1].zona)}. <a href="${esc(A.link)}" target="_blank" rel="noopener">Bollettino della Protezione Civile</a>, ${esc(A.nome.replace(/^Bollettino del /, ""))}.</p></div>
+  </section>`;
 }
 
 // ---------- cosa è cambiato ----------
@@ -233,20 +294,35 @@ function changeNote(data, today) {
 }
 
 // ---------- disegno ----------
+const hourNow = () => +fClock.format(new Date()).slice(0, 2);
+/** Righe dell'ora per ora ancora da venire (per oggi si parte dall'ora in corso). */
+function hoursLeft(d) {
+  const rows = d.ore || [];
+  if (d.data !== romeDate()) return rows;
+  const h = hourNow();
+  return rows.filter((r) => r[0] + r[8] > h);
+}
+function nowTemp(d) {
+  const r = hoursLeft(d)[0];
+  return r && r[1] != null && d.data === romeDate() && r[0] <= hourNow() ? r[1] : null;
+}
 function hero(data, today) {
   const g = data.giorni;
   const blocks = g.slice(0, 2).map((d, i) => {
-    const st = d.incertezza?.stato || "quasi";
-    const lowTxt = d.min == null ? "" : `<span class="t-min" title="Minima">${deg(d.min)}</span>`;
-    return `<article class="now ${i ? "next" : ""}">
-      <h2>${cap(dayName(d.data, today))}</h2>
-      <div class="now-main">${icon(d.codice, 56)}<div class="temps"><span class="t-max" title="Massima">${deg(d.max)}</span>${lowTxt}</div></div>
+    const now = i === 0 ? nowTemp(d) : null;
+    const rain = rainText(d);
+    return `<article class="now ${i ? "next" : ""}" data-i="${i}" tabindex="0">
+      <h2>${cap(dayName(d.data, today))}${now != null ? `<span class="t-now">adesso ${deg(now)}</span>` : ""}</h2>
+      <div class="now-main">${icon(d.codice, i ? 54 : 68)}<div class="temps"><span class="t-max" title="Massima">${deg(d.max)}</span><span class="t-min" title="Minima">${deg(d.min)}</span></div></div>
       <p class="sentence">${esc(daySentence(d))}</p>
-      <p class="state">${fan(st, 20)}<span><b>${STATE[st]}.</b> ${esc(certaintyText(d, today))}</span></p>
+      ${rain ? `<p class="rain-l${(d.pioggia?.p ?? 0) >= 50 ? " wet" : ""}">${DROP}<span>${esc(rain)}</span></p>` : ""}
+      ${stateLine(d, today, i ? 30 : 38)}
     </article>`;
   }).join("");
   return `<div class="now-row">${blocks}</div>`;
 }
+const DROP = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" class="drop"><path d="M12 3.2c3.4 4.6 6 8 6 11.1a6 6 0 0 1-12 0c0-3.1 2.6-6.5 6-11.1z"/></svg>`;
+const TRI = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" class="tri"><path d="M12 2.8 22.5 21h-21z" class="al-tri"/><path d="M12 9v5.6M12 17.4v.4" class="al-mark"/></svg>`;
 
 function changesBlock(note) {
   if (!note) return "";
@@ -260,23 +336,26 @@ function fanChart(data, today) {
   const g = data.giorni;
   const cols = g.map((d, i) => {
     const st = d.incertezza?.stato || "quasi";
-    const p = d.pioggia?.p;
+    const p = d.pioggia?.p, mm = d.pioggia?.mm;
     const sel = i === C.day;
-    const label = `${cap(dayName(d.data, today))}: ${LABEL[d.codice] || ""}, massima ${deg(d.max)}, minima ${deg(d.min)}, pioggia ${p == null ? "non disponibile" : Math.round(p) + "%"}, ${STATE[st].toLowerCase()}`;
-    return `<button class="col${sel ? " sel" : ""}" data-i="${i}" aria-pressed="${sel}" aria-label="${esc(label)}">
+    const al = alertOf(data.id, d.data);
+    const showMm = p != null && p >= 25 && mm >= 0.1;
+    const label = `${cap(dayName(d.data, today))}: ${LABEL[d.codice] || ""}, massima ${deg(d.max)}, minima ${deg(d.min)}. ${rainText(d, false)}. ${STATE[st]}: ${SURE[st]}${al ? ". " + cap(al.text) : ""}`;
+    return `<button class="col${sel ? " sel" : ""}${al ? " al-" + al.level : ""}" data-i="${i}" aria-pressed="${sel}" aria-label="${esc(label)}">
       <span class="c-day">${i === 0 ? "Oggi" : cap(fShort.format(dateObj(d.data)).replace(".", ""))}<small>${dateObj(d.data).getUTCDate()}</small></span>
-      ${icon(d.codice, 30)}
+      ${icon(d.codice, 32)}
       <span class="c-max">${deg(d.max)}</span>
       <span class="c-plot"></span>
       <span class="c-min">${deg(d.min)}</span>
-      <span class="c-rain${p != null && p >= 30 ? " wet" : ""}"><i style="height:${p == null ? 0 : Math.max(2, (p / 100) * 26)}px"></i>${p == null ? "–" : Math.round(p) + "%"}</span>
-      <span class="c-state" title="${STATE[st]}">${fan(st, 34)}</span>
+      <span class="c-rain${p != null && p >= 50 ? " wet" : p != null && p >= 25 ? " maybe" : ""}"><i style="height:${p == null ? 0 : Math.max(2, (p / 100) * 24)}px"></i>${showMm ? `<b>${mmText(mm).replace(" mm", "")}</b><small>mm</small>` : ""}</span>
+      <span class="c-state">${fan(st, 34)}</span>
     </button>`;
   }).join("");
   return `<section class="ventaglio" aria-labelledby="vTitle">
     <div class="sec-head"><h2 id="vTitle">I prossimi ${g.length} giorni</h2>
-      <p>Le fasce colorate mostrano dove cadono massime e minime in 8 scenari su 10: più si allargano, meno è sicuro.</p></div>
+      <p class="v-legend"><span>${fan("deciso", 26)}sicura</span><span>${fan("quasi", 26)}abbastanza</span><span>${fan("aperto", 26)}incerta</span></p></div>
     <div class="v-scroll"><div class="v-grid" style="--n:${g.length}">${cols}<svg class="v-svg" aria-hidden="true"></svg></div></div>
+    <p class="v-note">La fascia colorata è dove possono cadere massima e minima; la barra azzurra è la probabilità di pioggia, il numero i millimetri.</p>
   </section>`;
 }
 
@@ -424,40 +503,89 @@ function chartsLink(d) {
   return `<a class="to-charts" href="#carte/ecmwf/italia/${chart}/${lead}">Guarda le carte di ${esc(dayName(d.data))} per appassionati</a>`;
 }
 
+const ARROW = (dir) => `<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" class="w-arr" style="transform:rotate(${Math.round(dir + 180)}deg)"><path d="M6 1.2 9.6 10 6 8 2.4 10z"/></svg>`;
+/** Ora per ora (oppure ogni 3 ore): ora, icona, temperatura, pioggia, vento. */
+function hoursBlock(d, today) {
+  const rows = hoursLeft(d);
+  if (!rows.length) return fasceBlock(d);
+  const step = rows[0][8];
+  const nowH = hourNow();
+  const temps = rows.map((r) => r[1]).filter((v) => v != null);
+  const lo = Math.min(...temps), hi = Math.max(...temps);
+  const cells = rows.map((r) => {
+    const [h, t, mm, , kmh, dir, code, night, st] = r;
+    const rate = (mm || 0) / st;
+    const lift = t == null || hi === lo ? 0 : ((t - lo) / (hi - lo)) * 14;
+    const isNow = d.data === today && h === nowH;
+    const wind = kmh == null ? "" : `<span class="h-w${kmh >= 30 ? " strong" : ""}" title="Vento ${num(kmh)} km/h">${dir == null ? "" : ARROW(dir)}${num(kmh)}</span>`;
+    return `<li class="${night ? "night" : ""}${rate >= 0.2 ? " wet" : ""}">
+      <span class="h-h">${isNow ? "Ora" : step === 1 ? h : String(h).padStart(2, "0") + ":00"}</span>
+      ${icon(code, 30, !!night)}
+      <span class="h-t" style="transform:translateY(${(-lift).toFixed(1)}px)">${deg(t)}</span>
+      <span class="h-r" title="${esc(mmText(mm))}"><i style="height:${Math.min(22, rate >= 0.1 ? 3 + (rate / 4) * 19 : 0).toFixed(1)}px"></i><small>${mm >= 0.1 ? mmText(mm).replace(" mm", "") : ""}</small></span>
+      ${wind}
+    </li>`;
+  }).join("");
+  const sun = d.alba ? `<span class="sun">Alba ${d.alba.replace(/^0/, "")}, tramonto ${d.tramonto.replace(/^0/, "")}</span>` : "";
+  return `<div class="hours"><div class="h-head"><h3>${step === 1 ? "Ora per ora" : "Ogni 3 ore"}</h3>${sun}</div>
+    <ol class="h-strip" aria-label="${step === 1 ? "Previsione ora per ora" : "Previsione ogni 3 ore"}">${cells}</ol>
+    <p class="h-note">Millimetri di pioggia ${step === 1 ? "nell'ora" : "nelle 3 ore"}, vento in km/h.</p></div>`;
+}
+function fasceBlock(d) {
+  const fasce = (d.fasce || []).map((f, k) => f ? `<li>${icon(f.codice, 30, k === 0 || k === 3)}
+      <span class="f-name">${FASCE[k]}</span><span class="f-t">${deg(f.t)}</span>
+      <span class="f-p${f.p != null && f.p >= 50 ? " wet" : ""}">${f.p == null ? "" : f.mm >= 0.1 && f.p >= 25 ? mmText(f.mm) : ""}</span></li>` : "").join("");
+  if (!fasce) return "";
+  return `<div class="hours"><div class="h-head"><h3>Durante il giorno</h3>${d.alba ? `<span class="sun">Alba ${d.alba.replace(/^0/, "")}, tramonto ${d.tramonto.replace(/^0/, "")}</span>` : ""}</div>
+    <ul class="fasce" aria-label="Fasce della giornata">${fasce}</ul>
+    <p class="h-note">Così lontano i modelli non danno ancora il dettaglio ora per ora.</p></div>`;
+}
+function facts(d) {
+  const out = [];
+  const r = rainText(d), [noun] = rainNoun(d);
+  if (r) out.push([noun, r.slice(noun.length + 1)]);
+  const v = d.vento;
+  if (v && v.kmh != null) out.push(["Vento", `${v.nome}, ${num(v.kmh)} km/h${v.raffiche >= 40 ? `, raffiche fino a ${num(Math.round(v.raffiche / 5) * 5)}` : ""}`]);
+  const n = d.neve, p = d.pioggia?.p ?? 0;
+  if (n && p >= 25 && n.quota <= 2000) out.push(["Quota neve", `circa ${num(n.quota)} m`]);
+  return `<dl class="facts">${out.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`;
+}
 function detail(data, today) {
   const d = data.giorni[C.day];
   if (!d) return "";
   const st = d.incertezza?.stato || "quasi";
-  const fasce = (d.fasce || []).map((f, k) => f ? `<li>${icon(f.codice, 30, k === 0 || k === 3)}
-      <span class="f-name">${FASCE[k]}</span><span class="f-t">${deg(f.t)}</span>
-      <span class="f-p${f.p != null && f.p >= 30 ? " wet" : ""}">${f.p == null ? "" : Math.round(f.p) + "%"}</span></li>` : "").join("");
+  const al = alertOf(data.id, d.data);
+  const more = sureText(d, today);
+  const why = whyBlock(d, C.day > 0 ? dayName(data.giorni[C.day - 1].data, today) : "ieri") || chartsLinkBlock(d);
   return `<section class="detail" aria-live="polite">
     <div class="d-head">
       <h2>${esc(cap(dayName(d.data, today)))} <span>${esc(fDayMonth.format(dateObj(d.data)))}</span></h2>
       <p class="sentence">${esc(daySentence(d))}</p>
     </div>
+    ${al ? `<p class="al-l al-${al.level}">${TRI}<span>${esc(cap(al.text))}. <a href="${esc(C.alerts.link)}" target="_blank" rel="noopener">Bollettino</a></span></p>` : ""}
+    ${facts(d)}
+    ${hoursBlock(d, today)}
     <div class="d-grid">
-      <div class="d-col">
-        ${fasce ? `<ul class="fasce" aria-label="Fasce della giornata">${fasce}</ul>` : ""}
-        <h3>${fan(st, 22)} Quando lo saprai</h3>
-        <p><b>${STATE[st]}.</b> ${esc(certaintyText(d, today))}</p>
-        <h3>Gli ${d.pioggia?.su || 81} scenari</h3>
-        ${scenarios(d)}
-      </div>
-      <div class="d-col">
-        ${whyBlock(d, C.day > 0 ? dayName(data.giorni[C.day - 1].data, today) : "ieri")}
-        <h3>Come è cambiata la previsione</h3>
-        ${historyBlock(data, d)}
-        <h3>Cosa dicono i modelli</h3>
-        ${modelsBlock(d)}
-        <div id="rankBox">${rankBox(data)}</div>
-        ${(d.perche || []).length ? "" : chartsLink(d)}
-      </div>
+      ${why ? `<div class="d-col">${why}</div>` : ""}
+      <div class="d-col"><h3>${fan(st, 28)} ${STATE[st]}</h3>
+        <p><b>${cap(SURE[st])}.</b> ${st === "deciso" ? "Modelli e scenari dicono la stessa cosa." : esc(more)}</p></div>
     </div>
+    <details class="more"${C.more ? " open" : ""}><summary>Scenari, modelli e storico</summary>
+      <div class="d-grid">
+        <div class="d-col"><h3>Gli ${d.pioggia?.su || 81} scenari</h3>${scenarios(d)}
+          <h3>Come è cambiata la previsione</h3>${historyBlock(data, d)}</div>
+        <div class="d-col"><h3>Cosa dicono i modelli</h3>${modelsBlock(d)}
+          <div id="rankBox">${rankBox(data)}</div>${(d.perche || []).length ? chartsLink(d) : ""}</div>
+      </div>
+    </details>
   </section>`;
 }
+function chartsLinkBlock(d) {
+  const l = chartsLink(d);
+  return l ? `<h3>Le carte</h3><p>${l}</p>` : "";
+}
 
-function search(placeholder = "Cerca il tuo comune") {
+function search(placeholder = "Cerca il tuo comune", extra = "") {
   return `<div class="search" role="search">
     <div class="combo">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
@@ -465,7 +593,7 @@ function search(placeholder = "Cerca il tuo comune") {
         role="combobox" aria-expanded="false" aria-controls="qList" aria-autocomplete="list">
       <ul id="qList" role="listbox" hidden></ul>
     </div>
-    <button type="button" class="near" id="near">${locIcon()}<span>Vicino a me</span></button>
+    <button type="button" class="near" id="near" aria-label="Vicino a me">${locIcon()}<span>Vicino a me</span></button>${extra}
   </div>
   <p class="loc-msg" id="locMsg" role="status"></p>`;
 }
@@ -532,6 +660,56 @@ function locate(root) {
   }, { timeout: 12000, maximumAge: 600000 });
 }
 
+// ---------- preferiti ----------
+const favs = () => (Array.isArray(store("preferiti")) ? store("preferiti") : []);
+const isFav = (id) => favs().some((f) => f.id === id);
+function toggleFav(data) {
+  const name = data.nome.split("/")[0];
+  const list = isFav(data.id) ? favs().filter((f) => f.id !== data.id) : [...favs(), { id: data.id, nome: name }];
+  store("preferiti", list.slice(-12));
+  return isFav(data.id);
+}
+const STAR = `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="m12 3.2 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg>`;
+function favChips(current) {
+  const f = favs();
+  if (!f.length || (f.length === 1 && f[0].id === current)) return "";
+  return `<nav class="fav-chips" aria-label="I tuoi preferiti">${f.map((x) => `<a href="#citta/${esc(x.id)}"${x.id === current ? ' aria-current="page"' : ""}>${esc(x.nome)}</a>`).join("")}</nav>`;
+}
+/** Riassunto di oggi per una scheda dei preferiti (i comuni delle zone richiedono la previsione della zona). */
+async function favDay(f) {
+  const p = C.index.luoghi.find((x) => x.id === f.id);
+  if (p) return { ...p.giorni[0], p: p.giorni[0].p };
+  const all = await loadComuni();
+  const c = C.comuniById.get(f.id);
+  if (!c) return null;
+  const z = await getJSON(`data/${c.file}.json?u=${encodeURIComponent(C.index.aggiornato)}`);
+  const d = (c.file.startsWith("celle/") ? adapt(z, c) : z).giorni[0];
+  return d && { data: d.data, min: d.min, max: d.max, p: d.pioggia?.p, codice: d.codice, stato: d.incertezza?.stato };
+}
+function favCard(f, d) {
+  const al = d && alertOf(f.id, d.data);
+  const body = !d ? `<span class="fc-wait">…</span>`
+    : `${icon(d.codice, 40)}<span class="fc-t"><b class="t-max">${deg(d.max)}</b> <span class="t-min">${deg(d.min)}</span></span>
+       <span class="fc-r">${d.p == null ? "" : `Pioggia ${chance(d.p)}`}</span>${al ? `<span class="fc-al al-${al.level}">${TRI}Allerta ${LEVEL[al.level]}</span>` : ""}`;
+  return `<a class="fav-card" href="#citta/${esc(f.id)}" data-id="${esc(f.id)}"><span class="fc-name">${esc(f.nome)}</span>${body}</a>`;
+}
+function fansExplain(cls = "") {
+  return `<div class="fans ${cls}">
+    <figure>${fan("deciso", 64)}<figcaption><b>Chiuso</b>previsione sicura</figcaption></figure>
+    <figure>${fan("quasi", 64)}<figcaption><b>Socchiuso</b>abbastanza sicura</figcaption></figure>
+    <figure>${fan("aperto", 64)}<figcaption><b>Aperto</b>ancora incerta</figcaption></figure>
+  </div>`;
+}
+function introCard() {
+  if (store("spiegato")) return "";
+  return `<aside class="intro" id="intro">
+    ${fansExplain("small")}
+    <div><p><b>${MOTTO}</b> Ogni giorno ha il suo ventaglio. Confrontiamo 81 scenari del tempo:
+      se dicono tutti la stessa cosa il ventaglio è chiuso e la previsione è sicura. Più si apre, più il tempo può cambiare.</p>
+      <button type="button" class="ok" id="introOk">Ho capito</button> <a href="#come-funziona">Come funziona</a></div>
+  </aside>`;
+}
+
 // ---------- pagine ----------
 function homePage() {
   const byReg = new Map();
@@ -542,22 +720,28 @@ function homePage() {
   const regs = [...byReg.keys()].sort((a, b) => a.localeCompare(b, "it"));
   const lists = regs.map((r) => `<div class="reg"><h3>${esc(r.split("/")[0])}</h3><p>${byReg.get(r).sort((a, b) => a.nome.localeCompare(b.nome, "it"))
     .map((p) => `<a href="#citta/${p.id}">${esc(p.nome.split("/")[0])}</a>`).join(" ")}</p></div>`).join("");
+  const f = favs();
+  const favBlock = f.length ? `<section class="favs"><h2>I tuoi preferiti</h2><div class="fav-grid">${f.map((x) => favCard(x, null)).join("")}</div></section>` : "";
   return `<section class="home">
-    <h1 class="brand-big">Ventaglio</h1>
-    <p class="lede">Il meteo del tuo comune, con una cosa in più: quanto è sicura la previsione e quando conviene ricontrollarla.</p>
+    <div class="home-top">
+      <div><h1 class="brand-big">Ventaglio</h1>
+        <p class="motto">${MOTTO}</p></div>
+      ${fansExplain()}
+    </div>
+    <p class="lede">Il meteo del tuo comune e quanto è sicuro. Più il ventaglio di un giorno è chiuso, più puoi fidarti della previsione.</p>
     ${search("Cerca il tuo comune")}
-    <p class="explain">Per ogni giorno mettiamo a confronto quattro modelli e 81 simulazioni diverse dell'atmosfera, gli <i>scenari</i>.
-      Se vanno d'accordo la previsione è decisa; se si dividono te lo diciamo, insieme al momento in cui di solito si chiarisce.
-      Ventaglio ricorda anche cosa diceva l'ultima volta che sei passato. <a href="#come-funziona">Come funziona</a></p>
+    ${favBlock}
+    <a class="radar-card" href="#radar">${RADAR_ICON}<span><b>Radar della pioggia</b>Dove piove adesso in Italia, dalla Protezione Civile</span></a>
     <h2 class="regs-title">I capoluoghi</h2>
     <div class="regs">${lists}</div>
+    <p class="explain">Per ogni giorno confrontiamo quattro modelli e 81 scenari dell'atmosfera, e ti diciamo quando conviene ricontrollare. <a href="#come-funziona">Come funziona</a></p>
   </section>`;
 }
+const RADAR_ICON = `<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" class="radar-i"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12 18.4 5.6"/><circle cx="15.5" cy="8.6" r="1.4" class="blip"/></svg>`;
 
 function cityPage(data) {
   const today = romeDate();
   const note = changeNote(data, today);
-  const runs = data.corse || {};
   const up = Date.parse(data.aggiornato);
   const first = (x) => String(x || "").split("/")[0];
   const prov = first(data.provincia), reg = first(data.regione);
@@ -565,27 +749,39 @@ function cityPage(data) {
     data.alt != null ? `${num(data.alt)} m` : null].filter(Boolean).join(", ");
   const nota = store("nota");
   if (nota) store("nota", null);
-  const zone = data.zona ? `<p class="zone">La previsione è calcolata per la zona intorno (${data.zona.comuni} comuni) e adattata alla quota di ${esc(data.nome.split("/")[0])}.</p>` : "";
+  const fav = isFav(data.id);
+  const zone = data.zona ? ` Previsione della zona intorno, adattata alla quota del comune.` : "";
   return `<section class="city">
     <header class="c-head">
-      <div><h1>${esc(data.nome.split("/")[0])}</h1>
-        <p class="where">${esc(where)}. Aggiornato ${esc(whenText(up))}
-          con ${Object.keys(runs).filter((k) => MODELS[k]).length} modelli e ${data.membri} scenari. <a href="#come-funziona">Come funziona</a></p>${zone}</div>
-      ${search("Cerca un altro comune")}
+      <div class="c-title">
+        <h1>${esc(data.nome.split("/")[0])}<button type="button" class="star" id="star" aria-pressed="${fav}" aria-label="${fav ? "Togli dai preferiti" : "Aggiungi ai preferiti"}" title="${fav ? "Togli dai preferiti" : "Aggiungi ai preferiti"}">${STAR}</button></h1>
+        <p class="where">${esc(where)}. Aggiornato ${esc(whenText(up))}.${zone}</p>
+      </div>
+      <div class="c-tools">${search("Cerca un altro comune", `<a class="radar-btn" href="#radar/${esc(data.id)}">${RADAR_ICON}<span>Radar</span></a>`)}</div>
     </header>
+    ${favChips(data.id)}
     ${nota ? `<p class="note">${esc(nota)}</p>` : ""}
     ${navigator.onLine === false ? `<p class="note">Sei offline: questa è l'ultima previsione scaricata, aggiornata ${esc(whenText(up))}.</p>` : ""}
+    ${alertBanner(data, today)}
+    ${introCard()}
     ${hero(data, today)}
     ${changesBlock(note)}
     ${fanChart(data, today)}
     <div id="detail">${detail(data, today)}</div>
+    <p class="motto-foot">${fan("deciso", 22)} ${MOTTO}</p>
   </section>`;
 }
 
 function infoPage() {
   return `<article class="info">
     <h1>Come funziona Ventaglio</h1>
-    <p class="lede">Una previsione del tempo non è mai una certezza. Ventaglio te lo dice in modo chiaro, giorno per giorno, e ti aiuta a capire quando fidarti.</p>
+    <p class="lede">${MOTTO} Una previsione del tempo non è mai una certezza: Ventaglio ti dice, giorno per giorno, quanto puoi fidarti.</p>
+    <h2>Perché si chiama Ventaglio</h2>
+    ${fansExplain()}
+    <p>Per ogni giorno non c'è una sola previsione ma tante: 81 scenari, cioè simulazioni dell'atmosfera che partono da condizioni appena diverse.
+      Se arrivano tutti allo stesso tempo, il ventaglio di quel giorno è <b>chiuso</b> e la previsione è sicura. Se si dividono, il ventaglio si apre:
+      <b>socchiuso</b> quando la previsione è abbastanza sicura, <b>aperto</b> quando il tempo può ancora andare in modi diversi.
+      Nel grafico dei prossimi giorni lo vedi anche nelle fasce colorate delle temperature: più si allargano, più il ventaglio è aperto.</p>
     <h2>Da dove vengono i dati</h2>
     <p>Ogni volta che i centri meteo pubblicano una nuova corsa, il sito scarica i dati e rifà i conti da solo. Usiamo quattro modelli:
       ECMWF IFS (il centro europeo), ECMWF AIFS (il suo modello a intelligenza artificiale), GFS (NOAA, Stati Uniti) e ICON-EU (servizio meteo tedesco, solo i primi 5 giorni).
@@ -594,9 +790,17 @@ function infoPage() {
     <p>Oltre ai modelli "singoli", ECMWF e NOAA fanno girare lo stesso modello molte volte partendo da condizioni leggermente diverse: 50 volte il modello europeo, 31 l'americano.
       Ognuna di queste simulazioni è uno scenario possibile. La probabilità di pioggia è semplicemente il numero di scenari in cui piove almeno 1 mm nella giornata, su 81.
       Le fasce colorate del grafico mostrano dove cadono massime e minime in 8 scenari su 10.</p>
-    <h2>Deciso, quasi deciso, ancora aperto</h2>
-    <p>Un giorno è <b>deciso</b> quando gli scenari vanno d'accordo: piove in meno di 2 su 10 o in più di 8 su 10, e la massima sta in una forbice di 4 gradi.
-      Quando si dividono, il giorno è <b>quasi deciso</b> o <b>ancora aperto</b>. Il ventaglio accanto a ogni giorno è più chiuso o più aperto di conseguenza.</p>
+    <h2>Quando il ventaglio è chiuso</h2>
+    <p>Il ventaglio è <b>chiuso</b> quando gli scenari vanno d'accordo: piove in meno di 2 su 10 o in più di 8 su 10, e la massima sta in una forbice di 4 gradi.
+      Altrimenti è <b>socchiuso</b> o <b>aperto</b>, secondo quanto si dividono.</p>
+    <h2>Probabilità a parole</h2>
+    <p>La pioggia è <i>quasi certa</i> quando piove almeno 1 mm in 9 scenari su 10 o più, <i>molto probabile</i> da 7 su 10, <i>probabile</i> da 5 su 10,
+      <i>possibile</i> da 1 su 4, <i>poco probabile</i> da 1 su 10, altrimenti <i>improbabile</i>. I millimetri sono la media pesata dei modelli.
+      Il conto degli scenari, giorno per giorno, è in "Scenari, modelli e storico", sotto il dettaglio di ogni giorno.</p>
+    <h2>Ora per ora</h2>
+    <p>Toccando un giorno si apre il dettaglio ora per ora: per oggi, domani e dopodomani ogni ora, poi ogni 3 ore fino al sesto giorno.
+      Viene da ICON-EU (ogni ora fino a 3 giorni), ECMWF IFS e GFS (ogni 3 ore). Le ore di pioggia, come "tra le 15 e le 18", sono le ore consecutive
+      in cui i modelli fanno cadere almeno 0,2 mm all'ora: sono indicative, soprattutto per i temporali.</p>
     <h2>Quando lo saprai</h2>
     <p>Misuriamo, sulle previsioni di oggi per tutte le città, quanto si restringono di solito gli scenari man mano che un giorno si avvicina.
       Da qui stimiamo il giorno in cui la previsione per la tua data dovrebbe diventare decisa e ti suggeriamo di ricontrollare quella sera, quando arrivano le corse del pomeriggio.
@@ -605,7 +809,7 @@ function infoPage() {
     <p>Il sito conserva ogni aggiornamento della previsione degli ultimi giorni. Per questo può mostrarti come è cambiata la previsione per un giorno e cosa è diverso da ieri.
       Ricorda anche cosa avevi visto all'ultima visita: questa informazione resta solo nel tuo browser, non viene inviata a nessuno, e lo stesso vale per la posizione se usi "Vicino a me".</p>
     <h2>I limiti</h2>
-    <p>I modelli hanno maglie di 7–25 km e dati ogni 6 ore: valli strette, coste e temporali locali possono andare diversamente. Le temperature del giorno sono stimate dai valori ogni 6 ore e dai massimi e minimi dei modelli quando ci sono.
+    <p>I modelli hanno maglie di 7–25 km: valli strette, coste e temporali locali possono andare diversamente. Le temperature del giorno sono stimate dai valori ogni 6 ore e dai massimi e minimi dei modelli quando ci sono.
       Per chi vuole vedere tutto c'è la parte <a href="#carte">per appassionati</a> con le carte, i confronti e gli ensemble.</p>
     <h2>Tutti i comuni</h2>
     <p>I capoluoghi di provincia hanno una previsione calcolata esattamente nel loro punto. Gli altri comuni sono raggruppati in zone di circa 25 km, la maglia dei modelli globali:
@@ -614,6 +818,12 @@ function infoPage() {
     <h2>Il perché, con la carta</h2>
     <p>Per ogni giorno Ventaglio cerca la causa principale del tempo che farà: aria più fredda o più calda in arrivo (e da dove), una bassa pressione, l'alta pressione,
       aria instabile, vento forte, lo zero termico basso. Te la spiega in una frase e ti mostra la carta dei modelli che la fa vedere, la stessa che guardano gli appassionati.</p>
+    <h2>Radar e allerte</h2>
+    <p>Il <a href="#radar">radar</a> mostra dove piove adesso, con l'ultima ora animata: sono i dati della rete radar nazionale del Dipartimento della Protezione Civile.
+      Le allerte vengono dal bollettino nazionale di criticità idrogeologica e idraulica della Protezione Civile, che esce ogni giorno nel primo pomeriggio e vale per oggi e domani:
+      se il tuo comune è in una zona con allerta gialla, arancione o rossa, lo vedi in cima alla pagina. Per le decisioni contano gli avvisi ufficiali della tua regione e del tuo comune.</p>
+    <h2>Preferiti</h2>
+    <p>Con la stella accanto al nome aggiungi un comune ai preferiti: li ritrovi nella pagina iniziale e in cima alla pagina di ogni comune. Restano solo in questo browser.</p>
     <h2>IA contro fisica</h2>
     <p>Ogni giorno confrontiamo le massime e le minime previste da ciascun modello con quelle misurate negli aeroporti italiani, per capire chi ci prende di più:
       il modello a intelligenza artificiale AIFS o i modelli fisici. <a href="#ia-contro-fisica">Guarda la classifica</a>.</p>
@@ -622,6 +832,7 @@ function infoPage() {
       Su Android e sui computer usa il pulsante "Installa" in alto, oppure il menu del browser. Su iPhone e iPad, in Safari: tocca Condividi, poi "Aggiungi alla schermata Home".</p>
     <h2>Fonti e licenze</h2>
     <p>ECMWF Open Data (IFS, AIFS, ENS), licenza CC BY 4.0. NOAA/NCEP (GFS, GEFS), pubblico dominio. Deutscher Wetterdienst (ICON-EU). Elenco dei comuni: dati ISTAT tramite Garda Informatica (licenza MIT).
+      Radar e bollettino di criticità: Dipartimento della Protezione Civile, licenza CC BY 4.0. Mappa di base del radar: © OpenStreetMap contributors, © CARTO.
       Quote dal modello digitale del terreno AWS Terrain Tiles. Previsioni e grafici sono un'elaborazione di questo sito, non prodotti ufficiali degli enti.</p>
   </article>`;
 }
@@ -763,6 +974,14 @@ function adapt(zone, c) {
     g.codice = snowCode(g.codice, g.max, g.neve, g.pioggia?.mm);
     (g.fasce || []).forEach((f) => { if (f) { f.t = f.t == null ? f.t : Math.round(f.t + dz); f.codice = snowCode(f.codice, f.t, g.neve, (f.mm ?? 0) * 4); } });
     if (g.neve && g.max != null && g.max > 6) g.neve.suolo = 0;
+    for (const r of g.ore || []) {  // [ora, t, mm, nubi, km/h, dir, icona, notte, passo]
+      if (r[1] != null) r[1] = Math.round(r[1] + dz);
+      if (RAINY.includes(r[6]) || r[6] === "rovesci") {
+        const heavy = (r[2] || 0) / (r[8] || 1) >= 4;
+        const code = snowCode(r[6] === "rovesci" ? "pioggia" : r[6], r[1], g.neve, heavy ? 99 : 0);
+        r[6] = code === "pioggia" && r[6] === "rovesci" ? "rovesci" : code;
+      }
+    }
   }
   for (const snaps of Object.values(d.storia || {})) for (const s of snaps) { s[1] = sh(s[1]); s[2] = sh(s[2]); }
   Object.assign(d, { id: c.id, nome: c.nome, altro: c.altro, sigla: c.sigla, provincia: c.provincia, regione: c.regione,
@@ -775,13 +994,38 @@ async function loadIndex(force) {
   if (!C.index || force) C.index = await getJSON(`data/citta/indice.json?t=${Date.now()}`);
   return C.index;
 }
+function selectDay(root, i, scroll) {
+  C.day = i;
+  root.querySelectorAll(".col").forEach((x) => { const on = +x.dataset.i === i; x.classList.toggle("sel", on); x.setAttribute("aria-pressed", on); });
+  root.querySelector("#detail").innerHTML = detail(C.data, romeDate());
+  wireDetail(root);
+  drawBands(root, C.data);
+  const det = root.querySelector(".detail");
+  if (scroll && det && det.getBoundingClientRect().top > innerHeight * 0.6) det.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+}
+function wireDetail(root) {
+  const more = root.querySelector("details.more");
+  if (more) more.addEventListener("toggle", () => { C.more = more.open; });
+  const strip = root.querySelector(".h-strip");
+  if (strip && C.day === 0) strip.scrollLeft = 0;
+}
 function wireCity(root) {
-  root.querySelectorAll(".col").forEach((b) => b.addEventListener("click", () => {
-    C.day = +b.dataset.i;
-    root.querySelectorAll(".col").forEach((x) => { x.classList.toggle("sel", x === b); x.setAttribute("aria-pressed", x === b); });
-    root.querySelector("#detail").innerHTML = detail(C.data, romeDate());
-    drawBands(root, C.data);
-  }));
+  root.querySelectorAll(".col").forEach((b) => b.addEventListener("click", () => selectDay(root, +b.dataset.i, true)));
+  root.querySelectorAll(".now").forEach((a) => {
+    a.addEventListener("click", (e) => { if (!e.target.closest("a")) selectDay(root, +a.dataset.i, true); });
+    a.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectDay(root, +a.dataset.i, true); } });
+  });
+  const star = root.querySelector("#star");
+  if (star) star.addEventListener("click", () => {
+    const on = toggleFav(C.data);
+    star.setAttribute("aria-pressed", on);
+    star.setAttribute("aria-label", on ? "Togli dai preferiti" : "Aggiungi ai preferiti");
+    star.title = star.getAttribute("aria-label");
+    window.dispatchEvent(new CustomEvent("ventaglio:toast", { detail: on ? `${C.data.nome.split("/")[0]} è tra i preferiti` : "Tolto dai preferiti" }));
+  });
+  const ok = root.querySelector("#introOk");
+  if (ok) ok.addEventListener("click", () => { store("spiegato", true); root.querySelector("#intro").remove(); });
+  wireDetail(root);
   drawBands(root, C.data);
   wireSearch(root);
 }
@@ -795,6 +1039,14 @@ window.Citta = {
     C.data = null;
     C.root.innerHTML = homePage();
     wireSearch(C.root);
+    if (favs().length) {
+      loadAlerts().then(() => Promise.all(favs().map(async (f) => {
+        let d = null;
+        try { d = await favDay(f); } catch (e) { /* resta il nome */ }
+        const el = C.root.querySelector(`.fav-card[data-id="${CSS.escape(f.id)}"]`);
+        if (el) el.outerHTML = favCard(f, d || { codice: null });
+      })));
+    }
     document.title = "Ventaglio: il meteo della tua città e quanto è sicuro";
   },
   async open(id, keepDay) {
@@ -810,7 +1062,7 @@ window.Citta = {
     let data;
     const file = comune ? comune.file : `citta/${id}`;
     try {
-      data = await getJSON(`data/${file}.json?u=${encodeURIComponent(C.index.aggiornato)}`);
+      [data] = await Promise.all([getJSON(`data/${file}.json?u=${encodeURIComponent(C.index.aggiornato)}`), loadAlerts()]);
       if (comune && file.startsWith("celle/")) data = adapt(data, comune);
     } catch (e) { C.root.innerHTML = `<section class="home"><p class="note">Non riesco a caricare la previsione di ${esc(p.nome)}. Controlla la connessione e ricarica la pagina.</p></section>`; return true; }
     if (C.loading !== token) return true;
@@ -851,7 +1103,17 @@ window.Citta = {
     return true;
   },
   remembered: () => store("citta"),
-  icon, fan,
+  /** Luogo da mettere al centro del radar: quello aperto, quello chiesto o l'ultimo visto. */
+  async place(id) {
+    if (C.data && (!id || C.data.id === id)) return { id: C.data.id, nome: C.data.nome.split("/")[0], lat: C.data.lat, lon: C.data.lon };
+    id = id || store("citta");
+    if (!id) return null;
+    try { await loadIndex(); } catch (e) { return null; }
+    let p = C.index.luoghi.find((x) => x.id === id);
+    if (!p) { try { await loadComuni(); p = C.comuniById.get(id); } catch (e) { return null; } }
+    return p ? { id: p.id, nome: p.nome.split("/")[0], lat: p.lat, lon: p.lon } : null;
+  },
+  icon, fan, favs,
 };
 function notReady() {
   return `<section class="home"><h1 class="brand-big">Ventaglio</h1><p class="note">La previsione per città è in preparazione: arriva con il prossimo aggiornamento dei modelli. Intanto puoi guardare le <a href="#carte">carte</a>.</p></section>`;

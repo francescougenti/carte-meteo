@@ -75,6 +75,15 @@ Ogni elemento di `giorni`:
 | `modelli` | `min`, `max`, `mm` di ogni modello deterministico; `escluso: true` se è troppo lontano dagli altri ed è stato lasciato fuori dalla media |
 | `perche` | fino a tre cause del tempo del giorno, la più importante per prima (vedi sotto) |
 | `incertezza` | vedi sotto |
+| `alba`, `tramonto` | ore locali (`"06:34"`), calcolate per la posizione del luogo |
+| `ore` | ora per ora, solo per i primi 6 giorni (vedi sotto) |
+| `pioggia_ore` | fino a due intervalli di pioggia `[dalle, alle, mm]` in ore locali (24 = mezzanotte), ricavati da `ore`; mancano se il giorno nel complesso è asciutto (probabilità sotto il 30% e meno di 1 mm) |
+
+`ore`: righe `[ora, temperatura, mm, nubi %, vento km/h, direzione di provenienza in gradi, icona, notte (0/1), passo in ore]`,
+in ora locale. Per oggi, domani e dopodomani una riga ogni ora (da quella in corso), poi una ogni 3 ore fino al sesto giorno.
+I `mm` sono quelli caduti nel `passo` che termina a quell'ora. È una media pesata di ICON-EU (ogni ora fino a +78 h),
+ECMWF IFS e GFS (ogni 3 ore, interpolati nelle ore intermedie), con la temperatura corretta per l'altitudine come per i giorni.
+L'icona è quella della tabella sopra, calcolata ora per ora (neve e pioggia mista dallo zero termico).
 
 `incertezza`:
 
@@ -127,8 +136,21 @@ Temperature osservate nelle stazioni aeroportuali italiane (bollettini METAR, NO
 - `abbinamenti`: `{luogo: [ICAO, distanza km]}`: stazione entro 25 km e 150 m di dislivello
 - `recenti`: osservazioni grezze delle ultime 72 ore, per ricalcolare minime e massime
 
+## `data/allerte.json`
+
+Allerte del bollettino di criticità idrogeologica e idraulica nazionale del Dipartimento della Protezione Civile
+(repository `pcm-dpc/DPC-Bollettini-Criticita-Idrogeologica-Idraulica`, licenza CC BY 4.0), aggiornato quando esce un bollettino nuovo.
+
+- `bollettino`: nome dei file di origine (`AAAAMMGG_HHMM`); `nome`, `emesso`; `oggi` e `domani`: i giorni a cui si riferisce.
+- `rischi`: `["idraulico", "temporali", "idrogeologico"]`, l'ordine dei livelli qui sotto.
+- `zone`: zone di allerta con almeno un'allerta, `{nome, oggi: [livello per rischio], domani: [...]}`; livello 0 nessuna, 1 gialla, 2 arancione, 3 rossa.
+- `comuni`: `{id del comune: indice in zone}`, solo i comuni in zone con allerta. Il comune è assegnato alla zona che contiene il suo punto (o alla più vicina entro 5 km).
+- `link`, `fonte`, `aggiornato`.
+
 ## `data/campioni/<modello>.npz`
 
 File interni (NumPy) con i valori di ogni modello sui luoghi: `ids`, `h`, `valid`, `run`, `orog` (quota del terreno nel modello)
 e un array `v_<variabile>` per variabile, di forma (luoghi, scadenze) o (luoghi, membri, scadenze) per gli ensemble.
 `ecmwf-lungo.npz` conserva la corsa delle 00/12 quando quella delle 06/18 arriva solo a +144 h.
+`<modello>-orario.npz` (ICON-EU, ECMWF IFS, GFS) contiene `t2m`, `tp_total` (pioggia cumulata dall'inizio della corsa), `tcc`, `u10` e `v10`
+sui capoluoghi e sulle zone, ogni ora (ICON-EU) o ogni 3 ore, per la previsione ora per ora.

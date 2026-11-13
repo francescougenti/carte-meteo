@@ -1,9 +1,12 @@
 # Ventaglio: il meteo della tua città e quanto è sicuro
 
+*Ventaglio chiuso, con il tempo stai al sicuro.*
+
 Sito meteo che si aggiorna da solo a ogni nuova corsa dei modelli, con due anime:
 
-- **La tua città** (pagina iniziale), per tutti: la previsione di tutti i 7.894 comuni italiani per 10 giorni,
-  con quanto è sicura, quando conviene ricontrollarla e cosa è cambiato dall'ultima visita.
+- **La tua città** (pagina iniziale), per tutti: la previsione di tutti i 7.894 comuni italiani per 10 giorni, ora per ora
+  nei primi giorni, con quanto è sicura, quando conviene ricontrollarla e cosa è cambiato dall'ultima visita;
+  in più il radar della pioggia e le allerte della Protezione Civile.
 - **Per appassionati**: carte in stile Meteociel, confronto tra modelli, ensemble e meteogrammi.
 
 ## La tua città
@@ -15,13 +18,20 @@ Per ogni comune e per ogni giorno (i capoluoghi e Ostuni sono calcolati nel loro
   Sono una media pesata di ECMWF IFS, AIFS, GFS e ICON-EU, con la temperatura corretta per l'altitudine della città;
 - **gli 81 scenari**: la probabilità di pioggia è il numero di membri degli ensemble (50 ECMWF + 31 GEFS) in cui piove almeno 1 mm;
   le fasce colorate del grafico "I prossimi 10 giorni" mostrano dove cadono massime e minime in 8 scenari su 10;
-- **deciso, quasi deciso, ancora aperto** (il piccolo ventaglio più o meno aperto) e **quando lo saprai**: il giorno in cui
-  conviene ricontrollare, stimato da come si restringono gli scenari con l'avvicinarsi della data;
+- **ventaglio chiuso, socchiuso o aperto**: previsione sicura, abbastanza sicura o ancora incerta, e **quando lo saprai**: il giorno in cui
+  conviene ricontrollare, stimato da come si restringono gli scenari con l'avvicinarsi della data. Le probabilità sono dette a parole
+  (pioggia quasi certa, molto probabile, probabile, possibile, poco probabile, improbabile), con i millimetri sempre in vista;
+- **ora per ora**: toccando un giorno, temperatura, pioggia, nuvole e vento ogni ora per tre giorni (ICON-EU) e poi ogni 3 ore
+  fino al sesto (ECMWF IFS e GFS), con le ore in cui piove ("tra le 15 e le 18"), alba e tramonto;
 - **cosa è cambiato**: dall'ultima visita (ricordata solo nel browser) o rispetto a ieri, e come è cambiata la previsione
   per ogni giorno negli ultimi giorni (lo storico è conservato nei dati del sito);
 - **il perché, con la carta**: la causa principale del tempo del giorno (aria fredda o calda in arrivo e da dove,
   bassa o alta pressione, instabilità, vento, zero termico) in una frase, con la carta dei modelli che la mostra;
-- quattro modelli a confronto e **IA contro fisica**: quale modello ha indovinato di più all'aeroporto più vicino.
+- quattro modelli a confronto e **IA contro fisica**: quale modello ha indovinato di più all'aeroporto più vicino
+  (con gli scenari e lo storico, a scomparsa sotto il dettaglio del giorno);
+- **preferiti**: la stella accanto al nome; i preferiti compaiono nella pagina iniziale e in cima a ogni comune (solo nel browser);
+- **allerte**: dal bollettino nazionale di criticità idrogeologica e idraulica della Protezione Civile, comune per comune, per oggi e domani;
+- **radar** (`#radar`): la pioggia in atto dalla rete radar nazionale della Protezione Civile, con l'ultima ora animata.
 
 La pagina **IA contro fisica** confronta ogni giorno le massime e le minime previste da AIFS (intelligenza artificiale), ECMWF IFS,
 GFS e ICON-EU con quelle misurate in circa 40 aeroporti italiani (METAR), con 1, 3 e 5 giorni di anticipo.
@@ -115,4 +125,6 @@ Per provare solo "La tua città", `tests/fake_campioni.py /tmp/pub` simula tre g
 - ECMWF IFS, AIFS ed ENS: [ECMWF Open Data](https://www.ecmwf.int/en/forecasts/datasets/open-data), licenza [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Le carte sono un'elaborazione grafica di questo sito, non prodotti ufficiali ECMWF.
 - ICON-EU: [Deutscher Wetterdienst](https://opendata.dwd.de/), open data.
 - Grafici dei meteogrammi: [Chart.js](https://www.chartjs.org/) (licenza MIT), incluso in `site/vendor`.
+- Radar della pioggia (prodotto SRI) e bollettino di criticità: [Dipartimento della Protezione Civile](https://github.com/pcm-dpc), licenza CC BY 4.0.
+- Mappa del radar: [Leaflet](https://leafletjs.com/) (licenza BSD-2, in `site/vendor/leaflet`), mappa di base © OpenStreetMap contributors e © CARTO.
 - Coste e confini: [Natural Earth](https://www.naturalearthdata.com/), pubblico dominio. I file in `assets/geo` si rigenerano con `tools/prepara_geo.py`.

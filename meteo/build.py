@@ -18,7 +18,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 import numpy as np
 
 from . import config as C
-from . import citta, ensemble, grib, luoghi, points, verifica
+from . import allerte, citta, ensemble, grib, luoghi, orario, points, verifica
 from .sources import MODELS, UTC, download, log
 
 
@@ -157,6 +157,10 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
     shutil.rmtree(wdir, ignore_errors=True)
     if rows:
         points.write_det(public, model, run.iso, rows)
+    try:  # dati ora per ora sui comuni (non bloccano le carte se qualcosa va storto)
+        orario.write(public, model, run, luoghi.active() + luoghi.cells(), log=log)
+    except Exception as e:
+        log(f"::warning::{model.id}: dati ora per ora non aggiornati: {e}")
     if prows:
         keep_long_samples(public, model, run)
         points.write_samples(public, model.id, run.iso, [p["id"] for p in places], [r[0] for r in prows],
@@ -319,6 +323,10 @@ def main(argv=None):
     except Exception as e:
         log(f"::warning::Previsione per città non aggiornata: {e}")
         traceback.print_exc()
+    try:
+        allerte.update(a.public, log=log)
+    except Exception as e:
+        log(f"::warning::Allerte della Protezione Civile non aggiornate: {e}")
     size = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(a.public) for f in fs) / 1e6
     log(f"Spazio occupato dal sito: {size:.0f} MB")
     if size > 950:

@@ -2,10 +2,10 @@
    - pagine, stili e script: subito dalla memoria, aggiornati in sottofondo
    - dati (data/): prima dalla rete, dalla memoria solo se la rete manca
    - carte (maps/): dalla memoria se già viste, al massimo le ultime 80 */
-const SHELL = "ventaglio-pagine-v1";
+const SHELL = "ventaglio-pagine-v2";
 const DATA = "ventaglio-dati-v1";
 const MAPS = "ventaglio-carte-v1";
-const SHELL_FILES = ["./", "citta.js", "citta.css", "icona.svg", "vendor/chart.umd.js", "manifest.webmanifest"];
+const SHELL_FILES = ["./", "citta.js", "citta.css", "radar.js", "icona.svg", "vendor/chart.umd.js", "manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
