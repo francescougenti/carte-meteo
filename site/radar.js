@@ -9,6 +9,8 @@ const API = "https://radar-api.protezionecivile.it/findLastProductByType?type=SR
 const STEP = 10;     // minuti tra un fotogramma e l'altro
 const FRAMES = 7;    // l'ultima ora
 const ITALY = [[35.2, 6.4], [47.3, 18.8]];
+// chiave gratuita delle mappe di base CARTO: non è segreta, viaggia in ogni richiesta delle tessere
+const CARTO_KEY = "cb1_58fj_1_e56dc7afe972afe08278e75f";
 const R = { map: null, layers: [], times: [], k: 0, timer: null, poll: null, root: null, place: null, base: null, labels: null, obs: null };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -74,8 +76,9 @@ function baseLayers() {
   const style = dark() ? "dark" : "light";
   const attribution = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, © <a href="https://carto.com/attributions">CARTO</a>';
   if (R.base) { R.base.remove(); R.labels.remove(); }
-  R.base = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}_nolabels/{z}/{x}/{y}{r}.png`, { subdomains: "abcd", maxZoom: 19, attribution }).addTo(R.map);
-  R.labels = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}_only_labels/{z}/{x}/{y}{r}.png`, { subdomains: "abcd", maxZoom: 19, pane: "labels" }).addTo(R.map);
+  const url = (layer) => `https://basemaps.cartocdn.com/rastertiles/${style}_${layer}/{z}/{x}/{y}.png?key=${CARTO_KEY}`;
+  R.base = L.tileLayer(url("nolabels"), { maxZoom: 19, attribution }).addTo(R.map);
+  R.labels = L.tileLayer(url("only_labels"), { maxZoom: 19, pane: "labels" }).addTo(R.map);
 }
 
 function show(k) {
