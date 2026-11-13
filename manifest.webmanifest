@@ -1,0 +1,16 @@
+{
+  "name": "Ventaglio: il meteo del tuo comune",
+  "short_name": "Ventaglio",
+  "description": "Il meteo del tuo comune, con quanto è sicura la previsione e quando conviene ricontrollarla.",
+  "lang": "it",
+  "start_url": "./#citta",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#E9EEF1",
+  "theme_color": "#13283D",
+  "icons": [
+    {"src": "icona-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icona-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icona-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

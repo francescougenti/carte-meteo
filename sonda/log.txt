@@ -1,0 +1,12 @@
+icon-eu-orario: mancante, lo recupero dalla corsa 13/11 12Z
+    ora per ora icon-eu: 79 scadenze (0 mancanti) in 50 s
+ecmwf-orario: mancante, lo recupero dalla corsa 13/11 06Z
+    ora per ora ecmwf: 49 scadenze (0 mancanti) in 29 s
+ecmwf-mare: mancante, lo recupero dalla corsa 13/11 06Z
+    mare: 49 scadenze per 304 punti costieri (0 senza mare vicino) in 14 s
+icon-eu-neve: mancante, lo recupero dalla corsa 13/11 12Z
+    neve nei comprensori: 21 scadenze di icon-eu
+recupero 121 s
+Piste da sci: 56 comprensori italiani, 3 aperti
+La tua città: 120 capoluoghi e 641 zone per 7894 comuni
+città 20 s

@@ -1,0 +1,15 @@
+total 14304
+drwxr-xr-x 2 runner runner    4096 Nov 13 17:28 .
+drwxr-xr-x 8 runner runner    4096 Nov 13 17:28 ..
+-rw-r--r-- 1 runner runner 1124239 Nov 13 12:06 aifs.npz
+-rw-r--r-- 1 runner runner 4313426 Nov 13 08:32 ecmwf-ens.npz
+-rw-r--r-- 1 runner runner 1529505 Nov 13 08:15 ecmwf-lungo.npz
+-rw-r--r-- 1 runner runner   60999 Nov 13 17:28 ecmwf-mare.npz
+-rw-r--r-- 1 runner runner  605549 Nov 13 17:27 ecmwf-orario.npz
+-rw-r--r-- 1 runner runner  943719 Nov 13 13:09 ecmwf.npz
+-rw-r--r-- 1 runner runner 2622746 Nov 13 12:11 gefs.npz
+-rw-r--r-- 1 runner runner  479820 Nov 13 16:50 gfs-orario.npz
+-rw-r--r-- 1 runner runner 1225855 Nov 13 16:50 gfs.npz
+-rw-r--r-- 1 runner runner    6942 Nov 13 17:28 icon-eu-neve.npz
+-rw-r--r-- 1 runner runner  907460 Nov 13 17:27 icon-eu-orario.npz
+-rw-r--r-- 1 runner runner  791853 Nov 13 16:06 icon-eu.npz
