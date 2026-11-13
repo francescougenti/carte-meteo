@@ -1,0 +1,67 @@
+name: Sonda recupero dati e nuova intestazione (solo sviluppo)
+
+on:
+  push:
+    branches: [sonda]
+
+permissions:
+  contents: write
+
+jobs:
+  prova:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Recupera i dati pubblicati
+        uses: actions/cache/restore@v6
+        with:
+          path: public
+          key: sonda-${{ github.run_id }}
+          restore-keys: carte-
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installa le librerie
+        run: pip install -r requirements.txt
+
+      - name: Recupero di ora per ora, mare e neve
+        run: |
+          mkdir -p out
+          python - <<'PY' 2>&1 | tee out/log.txt
+          import time
+          from meteo import build
+          t = time.time()
+          build.ensure_extras("public")
+          print("recupero", round(time.time() - t), "s", flush=True)
+          PY
+
+      - name: Previsione per città e allerte
+        run: |
+          python - <<'PY' 2>&1 | tee -a out/log.txt
+          import time
+          from meteo import allerte, citta, sci
+          sci.update("public")
+          t = time.time()
+          citta.build("public")
+          print("città", round(time.time() - t), "s")
+          allerte.update("public")
+          PY
+
+      - name: Pubblica su anteprima
+        run: |
+          mkdir -p prev/data
+          cp -r site/. prev/
+          cp -r public/data/citta public/data/celle prev/data/
+          cp public/data/allerte.json public/data/sci.json prev/data/ || true
+          mkdir -p prev/data/verifica && cp public/data/verifica/classifica.json prev/data/verifica/ || true
+          cp -r out prev/sonda
+          ls -la public/data/campioni/ > prev/sonda/campioni.txt
+          cd prev
+          git init -q && git checkout -q -b anteprima && git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "Anteprima con i dati veri"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" anteprima
