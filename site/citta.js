@@ -499,7 +499,6 @@ function hero(data, today) {
     return `<article class="now ${i ? "next" : ""}" data-i="${i}" tabindex="0">
       <h2>${cap(dayName(d.data, today))}${now != null ? `<span class="t-now">adesso ${deg(now)}</span>` : ""}</h2>
       <div class="now-main">${icon(d.codice, i ? 54 : 68)}<div class="temps"><span class="t-max" title="Massima">${deg(d.max)}</span><span class="t-min" title="Minima">${deg(d.min)}</span></div></div>
-      <p class="sentence">${esc(daySentence(d))}</p>
       ${rain ? `<p class="rain-l${(d.pioggia?.p ?? 0) >= 50 ? " wet" : ""}">${DROP}<span>${esc(rain)}</span></p>` : ""}
       ${d.mare && data.mare_km != null ? `<p class="sea-l">${WAVE}<span>${esc(seaText(d.mare, true))}</span></p>` : ""}
       ${stateLine(d, today, i ? 30 : 38)}

@@ -2,13 +2,15 @@
    - pagine, stili e script: subito dalla memoria, aggiornati in sottofondo
    - dati (data/): prima dalla rete, dalla memoria solo se la rete manca
    - carte (maps/): dalla memoria se già viste, al massimo le ultime 80 */
-const SHELL = "ventaglio-pagine-v6";
+const SHELL = "ventaglio-pagine-v7";
 const DATA = "ventaglio-dati-v1";
 const MAPS = "ventaglio-carte-v1";
 const SHELL_FILES = ["./", "citta.js", "citta.css", "radar.js", "icona.svg", "vendor/chart.umd.js", "manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
+  // "reload": si scaricano davvero dal sito, non dalla memoria del browser (altrimenti può restare un file vecchio)
+  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES.map((u) => new Request(u, { cache: "reload" }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
@@ -63,7 +65,7 @@ async function staleWhileRevalidate(req) {
   const cache = await caches.open(SHELL);
   const key = req.mode === "navigate" ? "./" : req;
   const hit = await cache.match(key, { ignoreSearch: req.mode === "navigate" });
-  const fresh = fetch(req).then((res) => {
+  const fresh = fetch(req, { cache: "no-cache" }).then((res) => {
     if (res.ok) cache.put(key, res.clone());
     return res;
   }).catch(() => hit);
