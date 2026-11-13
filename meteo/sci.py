@@ -33,6 +33,27 @@ def fetch():
     raise err
 
 
+def model_snow(public):
+    """{comprensorio: dict(valle, cima, quota, cima_3g)} dalla neve al suolo di ICON-EU (cm), adesso e tra 3 giorni."""
+    path = os.path.join(public, "data", "campioni", "icon-eu-neve.npz")
+    if not os.path.exists(path):
+        return {}
+    with np.load(path) as z:
+        ids = [str(x) for x in z["ids"]]
+        valid = np.array([dt.datetime.strptime(str(v), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc).timestamp()
+                          for v in z["valid"]])
+        top, low, alt = z["v_cima"].astype(float), z["v_valle"].astype(float), z["orog"].astype(float)
+    now = dt.datetime.now(dt.timezone.utc).timestamp()
+    if not len(valid) or now - valid[-1] > 2 * 86400:
+        return {}  # dati troppo vecchi
+    k = int(np.argmin(np.abs(valid - now)))
+    k3 = int(np.argmin(np.abs(valid - now - 3 * 86400)))
+    cm = lambda v: None if not np.isfinite(v) else int(round(max(float(v), 0.0)))  # noqa: E731
+    return {rid: dict(valle=cm(low[i, k]), cima=cm(top[i, k]), quota=None if not np.isfinite(alt[i]) else int(round(alt[i], -1)),
+                      cima_3g=cm(top[i, k3]) if k3 != k else None)
+            for i, rid in enumerate(ids)}
+
+
 def nearest_comune(lat, lon, places, xyz):
     la, lo = np.radians(lat), np.radians(lon)
     p = np.array([np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)])
@@ -50,6 +71,7 @@ def update(public, log=print):
     places = luoghi.all_places()
     la, lo = np.radians([p["lat"] for p in places]), np.radians([p["lon"] for p in places])
     xyz = np.column_stack([np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)])
+    model = model_snow(public)
     out = []
     for r in resorts:
         loc = r["location"]
@@ -62,7 +84,7 @@ def update(public, log=print):
             piste=[slopes.get("open"), slopes.get("total")] if slopes.get("total") is not None else None,
             km=[slopes.get("open_km"), slopes.get("total_km")] if slopes.get("total_km") is not None else None,
             neve=[snow.get("valley_cm"), snow.get("mountain_cm"), snow.get("fresh_cm")],
-            valanghe=av.get("danger_level"),
+            valanghe=av.get("danger_level"), modello=model.get(r["id"]),
             comune=c["id"], comune_nome=c["name"], comune_km=round(d, 1)))
     out.sort(key=lambda x: (x["regione"] or "", x["nome"]))
     n_open = sum(x["stato"] == "open" for x in out)

@@ -257,13 +257,59 @@ function mountainBlock(d, data) {
     rows.push(["A 1.500 m", `${deg(q.t1500)}`]);
     if (q.vento != null) rows.push(["Vento in quota", `${num(q.vento)} km/h ${fromDir(q.dir)}`]);
   }
-  const ski = nearSki(data).slice(0, 3);
-  const list = ski.length ? `<ul class="ski-list">${ski.map(({ r, d: dist }) => skiRow(r, `<span class="sk-km">${num(dist)} km</span>`)).join("")}</ul>` : "";
+  const ski = nearSki(data);
+  const list = "";
   return `<div class="mountain"><div class="h-head"><h3>In montagna</h3><a href="#neve">Neve e piste in Italia</a></div>
     <dl class="facts">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>${list}
-    ${ski.length ? `<p class="h-note">Piste e neve dai bollettini dei comprensori, raccolti da <a href="https://liftradar.eu" target="_blank" rel="noopener">LiftRadar</a>. La neve prevista è indicativa: circa 1 cm per ogni millimetro di pioggia.</p>`
-      : `<p class="h-note">La neve prevista è indicativa: circa 1 cm per ogni millimetro di pioggia.</p>`}</div>`;
+    <p class="h-note">${ski.length ? "Piste e neve di oggi sono nel riquadro Neve e piste in alto. " : ""}La neve prevista è indicativa: circa 1 cm per ogni millimetro di pioggia.</p></div>`;
 }
+const IC_VALLE = `<svg viewBox="0 0 48 48" width="46" height="46" aria-hidden="true" class="sb-ic"><path d="M3 41.5h42" class="ic-l"/><path d="M11 40V25.5L24 15l13 10.5V40z" class="ic-f"/><path d="M20.5 40v-8h7v8" class="ic-l"/><path d="M7.5 27.5 24 14l16.5 13.5" class="ic-snow"/><path d="M5 41.5c3-2.6 6-2.6 9 0M33 41.5c3-2.6 7-2.6 10 0" class="ic-snow2"/></svg>`;
+const IC_CIMA = `<svg viewBox="0 0 48 48" width="46" height="46" aria-hidden="true" class="sb-ic"><path d="M3 40 18.5 13l7.5 12.5 4.5-6.5L45 40z" class="ic-f"/><path d="m13.6 21.6 4.9-8.6 4.8 8-2.6-1.3-2.3 2.2-2.3-2.1z" class="ic-cap"/><path d="m28 22.5 2.5-3.5 3.2 4.6-1.9-.8-1.6 1.2z" class="ic-cap"/></svg>`;
+const IC_PISTE = `<svg viewBox="0 0 48 48" width="46" height="46" aria-hidden="true" class="sb-ic"><path d="M4 38.5c10-1 22-8 40-24" class="ic-l"/><path d="M30 9v15" class="ic-l"/><path d="M30 9.5h9.5L36 13l3.5 3.5H30" class="ic-flag"/><circle cx="14.5" cy="22" r="2.4" class="ic-dot"/><path d="m9.5 33.5 4-7.5 4.5 2.5 2 5M12 28.5l-3 1.5" class="ic-l"/></svg>`;
+const IC_IMPIANTI = `<svg viewBox="0 0 48 48" width="46" height="46" aria-hidden="true" class="sb-ic"><path d="M3 9.5 45 21" class="ic-l"/><path d="M24 15v6" class="ic-l"/><rect x="16" y="21" width="16" height="13" rx="3" class="ic-f"/><path d="M19 25.5h10" class="ic-l"/><path d="M5 42h38" class="ic-l"/></svg>`;
+/** Il riquadro in cima alla pagina dei comuni di montagna: neve a valle e in cima, piste e impianti aperti e chiusi. */
+function snowBox(data) {
+  const near = nearSki(data);
+  const today = data.giorni[0];
+  const suolo = today && today.neve ? today.neve.suolo : null;
+  if (!near.length && !(data.alt >= 700 && suolo >= 1)) return "";
+  const item = (ic, lab, big, small, cls = "") => `<div class="sb-item ${cls}">${ic}<div><span class="sb-lab">${lab}</span><b>${big}</b>${small ? `<small>${small}</small>` : ""}</div></div>`;
+  if (!near.length) {
+    return `<section class="snowbox"><div class="sb-head"><h2>Neve</h2></div><div class="sb-grid">
+      ${item(IC_VALLE, "Al suolo", cm(suolo), `a ${num(data.alt)} m, stima dei modelli`)}</div></section>`;
+  }
+  const { r, d } = near[0];
+  const n = r.neve || [], m = r.modello || {};
+  const here = d <= 5;
+  const valle = n[0] != null ? [cm(n[0]), "dal comprensorio"]
+    : here && suolo != null ? [cm(suolo), `a ${num(data.alt)} m, stima dei modelli`]
+    : m.valle != null ? [cm(m.valle), "stima dei modelli"] : ["–", "non pubblicata"];
+  const cima = n[1] != null ? [cm(n[1]), "dal comprensorio"]
+    : m.cima != null ? [cm(m.cima), `a ${num(m.quota)} m, stima del modello ICON-EU${m.cima_3g != null && m.cima_3g !== m.cima ? `; tra 3 giorni circa ${cm(m.cima_3g)}` : ""}`]
+    : ["–", "non pubblicata"];
+  const fresh = n[2] ? `${cm(n[2])} di neve fresca. ` : "";
+  // piste: aperte e chiuse
+  let piste;
+  if (r.piste && r.piste[0] != null && r.piste[1]) piste = [`${r.piste[0]} aperte`, `${r.piste[1] - r.piste[0]} chiuse${r.km && r.km[1] ? `, ${num(r.km[0] ?? 0)} km aperti su ${num(r.km[1])}` : ""}`];
+  else if (r.km && r.km[0] != null && r.km[1]) piste = [`${num(r.km[0])} km aperti`, `su ${num(r.km[1])} km`];
+  else if (r.piste && r.piste[1]) piste = [`${r.piste[1]} piste`, r.stato === "closed" ? "tutte chiuse" : "aperte e chiuse non ancora pubblicate"];
+  else piste = ["–", "non pubblicate"];
+  const imp = r.impianti && r.impianti[1] ? [`${r.impianti[0] ?? "–"} su ${r.impianti[1]}`, r.impianti[0] != null ? `aperti, ${r.impianti[1] - r.impianti[0]} chiusi` : "non pubblicati"] : ["–", ""];
+  const others = near.slice(1, 4).map(({ r: o, d: dd }) => `${esc(o.nome)} (${SKI_STATE[o.stato].toLowerCase()}, ${num(dd)} km)`).join(", ");
+  const when = r.controllato ? whenText(Date.parse(r.controllato)) : "";
+  return `<section class="snowbox s-${r.stato}">
+    <div class="sb-head"><h2>Neve e piste</h2><span class="sb-name">${esc(r.nome)}${here ? "" : `, a ${num(d)} km`}</span><span class="sk-state">${SKI_STATE[r.stato] || ""}</span>
+      ${r.valanghe ? `<span class="sk-av av-${r.valanghe}">Valanghe: ${r.valanghe} ${AVALANCHE[r.valanghe]}</span>` : ""}</div>
+    <div class="sb-grid">
+      ${item(IC_VALLE, "A valle", valle[0], valle[1])}
+      ${item(IC_CIMA, "In cima", cima[0], cima[1])}
+      ${item(IC_PISTE, "Piste", piste[0], piste[1])}
+      ${item(IC_IMPIANTI, "Impianti", imp[0], imp[1])}
+    </div>
+    <p class="sb-note">${fresh}${when ? `Bollettino raccolto ${esc(when)} da <a href="https://liftradar.eu" target="_blank" rel="noopener">LiftRadar</a>. ` : ""}${others ? `Vicino: ${others}. ` : ""}<a href="#neve">Tutti i comprensori</a></p>
+  </section>`;
+}
+
 function skiPage() {
   const S = C.ski;
   if (!S) return `<article class="info"><h1>Neve e piste</h1><p class="note">I dati dei comprensori non sono ancora disponibili: arrivano con il prossimo aggiornamento.</p></article>`;
@@ -985,7 +1031,7 @@ function cityPage(data) {
   return `<section class="city">
     <header class="c-head">
       <div class="c-title">
-        <h1>${esc(data.nome.split("/")[0])}<button type="button" class="share" id="share" aria-label="Condividi la previsione" title="Condividi la previsione">${SHARE}</button><button type="button" class="star" id="star" aria-pressed="${fav}" aria-label="${fav ? "Togli dai preferiti" : "Aggiungi ai preferiti"}" title="${fav ? "Togli dai preferiti" : "Aggiungi ai preferiti"}">${STAR}</button></h1>
+        <h1${data.nome.split("/")[0].length > 10 ? ' class="long"' : ""}>${esc(data.nome.split("/")[0])}<button type="button" class="share" id="share" aria-label="Condividi la previsione" title="Condividi la previsione">${SHARE}</button><button type="button" class="star" id="star" aria-pressed="${fav}" aria-label="${fav ? "Togli dai preferiti" : "Aggiungi ai preferiti"}" title="${fav ? "Togli dai preferiti" : "Aggiungi ai preferiti"}">${STAR}</button></h1>
         <p class="where">${esc(where)}. Aggiornato ${esc(whenText(up))}.${zone}</p>
       </div>
       <div class="c-tools">${search("Cerca un altro comune", `<a class="radar-btn" href="#radar/${esc(data.id)}">${RADAR_ICON}<span>Radar</span></a>`)}</div>
@@ -995,6 +1041,7 @@ function cityPage(data) {
     ${navigator.onLine === false ? `<p class="note">Sei offline: questa è l'ultima previsione scaricata, aggiornata ${esc(whenText(up))}.</p>` : ""}
     ${alertBanner(data, today)}
     ${introCard()}
+    ${snowBox(data)}
     ${hero(data, today)}
     <div id="stationBox">${stationLine(data)}</div>
     ${changesBlock(note)}

@@ -379,3 +379,28 @@
 .c-head h1 .share{margin-left:4px}
 .cards2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:10px;margin:26px 0 0;max-width:900px}
 .cards2 .radar-card{margin:0;max-width:none}
+
+/* ---------- neve e piste in cima alla pagina ---------- */
+.snowbox{margin:0 0 12px;padding:14px 20px 12px;border-radius:16px;background:var(--panel);border:1px solid var(--rule)}
+.sb-head{display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap;margin:0 0 8px}
+.sb-head h2{font-size:18px;font-variation-settings:"wdth" 90}
+.sb-name{font-weight:600}
+.snowbox .sk-state{padding:1px 8px;border-radius:10px;background:var(--tint)}
+.snowbox.s-open .sk-state{background:var(--ok);color:#fff}
+.sb-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px 18px}
+.sb-item{display:flex;align-items:center;gap:12px;min-width:0}
+.sb-item>div{min-width:0}
+.sb-lab{display:block;font-size:13px;color:var(--muted)}
+.sb-item b{display:block;font-size:28px;line-height:1.05;font-variation-settings:"wdth" 75;color:var(--ink)}
+.sb-item small{display:block;font-size:12.5px;color:var(--muted);line-height:1.3}
+.sb-ic{flex:none}
+.sb-ic .ic-l{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sb-ic .ic-f{fill:var(--tint);stroke:var(--ink);stroke-width:2;stroke-linejoin:round}
+.sb-ic .ic-snow{fill:none;stroke:var(--snow);stroke-width:4.5;stroke-linecap:round;stroke-linejoin:round}
+.sb-ic .ic-snow2{fill:none;stroke:var(--snow);stroke-width:3;stroke-linecap:round}
+.sb-ic .ic-cap{fill:var(--snow);stroke:var(--ink);stroke-width:1.4;stroke-linejoin:round}
+.sb-ic .ic-flag{fill:var(--max);stroke:none}
+.sb-ic .ic-dot{fill:var(--ink)}
+.sb-note{margin:10px 0 0;font-size:13.5px;color:var(--muted);line-height:1.45}
+.c-head h1{flex-wrap:wrap;row-gap:0}
+.c-head h1.long{font-size:clamp(34px,7vw,76px)}

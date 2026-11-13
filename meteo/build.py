@@ -18,7 +18,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 import numpy as np
 
 from . import config as C
-from . import allerte, citta, ensemble, grib, luoghi, mare, orario, points, sci, stazioni, verifica
+from . import allerte, citta, ensemble, grib, luoghi, mare, neve, orario, points, sci, stazioni, verifica
 from .sources import MODELS, UTC, download, log
 
 
@@ -112,6 +112,7 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
     rows, sampler = [], None
     places = luoghi.sample_points()
     prows, psampler, orog = [], None, None
+    peaks = neve.Peaks(public) if model.id == "icon-eu" else None  # neve nei comprensori, a valle e in quota
 
     def collect(done):
         for f in done:
@@ -141,6 +142,14 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
                 sampler = points.sampler(lats, lons)
                 psampler = points.sampler(lats, lons, places)
             rows.append((h, iso(run.time + dt.timedelta(hours=h)), points.det_values(arrays, sampler)))
+            if peaks is not None:
+                try:  # un di più: se qualcosa va storto le carte vanno avanti lo stesso
+                    if not peaks.ready and "orog" in arrays:
+                        peaks.start(lats, lons, arrays["orog"])
+                    peaks.add(h, iso(run.time + dt.timedelta(hours=h)), arrays)
+                except Exception as e:
+                    log(f"    ! neve nei comprensori: {e}")
+                    peaks = None
             if "orog" in arrays:
                 orog = psampler(arrays.pop("orog"))
             prows.append((h, iso(run.time + dt.timedelta(hours=h)), points.place_values(arrays, psampler)))
@@ -161,6 +170,11 @@ def generate(model, run, public, work, workers, regions, charts, only_steps=None
         orario.write(public, model, run, luoghi.active() + luoghi.cells(), log=log)
     except Exception as e:
         log(f"::warning::{model.id}: dati ora per ora non aggiornati: {e}")
+    if peaks is not None:
+        try:
+            peaks.write(run)
+        except Exception as e:
+            log(f"::warning::Neve nei comprensori non aggiornata: {e}")
     if model.id == "ecmwf":
         try:  # onde davanti ai comuni costieri, dal modello d'onda della stessa corsa
             mare.write(public, model, run, log=log)

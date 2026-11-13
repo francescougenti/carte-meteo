@@ -158,6 +158,22 @@ def write_sea(run):
                          [v.strftime("%Y-%m-%dT%H:%M:%SZ") for v in valids], series)
 
 
+def write_peaks(run):
+    """Neve sintetica nei comprensori (se c'è già data/sci.json): più neve in quota che a valle."""
+    import json
+    path = os.path.join(PUB, "data", "sci.json")
+    if not os.path.exists(path):
+        return
+    rs = json.load(open(path))["comprensori"]
+    hs = list(range(0, 121, 6))
+    valids = [run + dt.timedelta(hours=x) for x in hs]
+    top = np.array([[max(0, 40 + 20 * math.sin(r["lon"]) + 0.3 * h) for h in hs] for r in rs], np.float32)
+    low = np.array([[max(0, 5 + 8 * math.sin(r["lat"]) + 0.1 * h) for h in hs] for r in rs], np.float32)
+    alts = np.array([2300 + 400 * abs(math.sin(r["lat"] * 3)) for r in rs], np.float32)
+    points.write_samples(PUB, "icon-eu-neve", run.strftime("%Y-%m-%dT%H:%M:%SZ"), [r["id"] for r in rs], hs,
+                         [v.strftime("%Y-%m-%dT%H:%M:%SZ") for v in valids], dict(cima=top, valle=low), alts)
+
+
 def main():
     places = luoghi.sample_points()
     for p in places:
@@ -170,6 +186,7 @@ def main():
         if run == LAST:
             write_hourly(run, [p for p in places if not p["id"].startswith("st-")])
             write_sea(run)
+            write_peaks(run)
         citta.build(PUB, now=run + dt.timedelta(hours=5))
         run += dt.timedelta(hours=6)
 

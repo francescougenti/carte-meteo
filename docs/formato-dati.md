@@ -149,7 +149,9 @@ Comprensori sciistici italiani da [LiftRadar](https://liftradar.eu) (bollettini 
 - `totale`: `comprensori`, `aperti`, `impianti` `[aperti, totali]`, `km` di piste `[aperti, totali]`.
 - `comprensori`: `id`, `nome`, `regione`, `lat`, `lon`, `stato` (`open`, `closed`, `no_report`), `controllato`, `impianti` e `piste` `[aperti, totali]`,
   `km` `[aperti, totali]`, `neve` `[a valle, in quota, fresca]` in cm (null se non pubblicata), `valanghe` (grado di pericolo 1–5),
-  `comune`, `comune_nome`, `comune_km`: il comune più vicino, per la previsione.
+  `comune`, `comune_nome`, `comune_km`: il comune più vicino, per la previsione;
+  `modello`: neve al suolo stimata da ICON-EU, adesso, `valle` nel punto del comprensorio e `cima` nella cella più alta del modello
+  entro 8 km, con la sua `quota` (m) e `cima_3g` (tra 3 giorni). Il sito la usa quando il comprensorio non pubblica le altezze della neve.
 - `fonte_aggiornata`: quando LiftRadar ha raccolto i dati.
 
 ## `data/stazioni.json`
@@ -176,5 +178,6 @@ e un array `v_<variabile>` per variabile, di forma (luoghi, scadenze) o (luoghi,
 `ecmwf-lungo.npz` conserva la corsa delle 00/12 quando quella delle 06/18 arriva solo a +144 h.
 `<modello>-orario.npz` (ICON-EU, ECMWF IFS, GFS) contiene `t2m`, `tp_total` (pioggia cumulata dall'inizio della corsa), `tcc`, `u10` e `v10`
 sui capoluoghi e sulle zone, ogni ora (ICON-EU) o ogni 3 ore, per la previsione ora per ora.
+`icon-eu-neve.npz` contiene la neve al suolo di ICON-EU (cm) nei comprensori: `valle` e `cima`, con `orog` = quota della cella in cima.
 `ecmwf-mare.npz` contiene `swh` (altezza significativa delle onde, m), `mwd` (direzione media, gradi) e `pp1d` (periodo di picco, s) ogni 3 ore fino a +144 h,
 nella cella di mare più vicina ai capoluoghi costieri e ai comuni costieri di ogni zona.
